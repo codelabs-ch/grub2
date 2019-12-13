@@ -2595,3 +2595,9 @@ module = {
   efi = commands/bli.c;
   enable = efi;
 };
+
+module = {
+  name = csl;
+  common = loader/bsbsc/csl.c;
+  enable = x86;
+};
