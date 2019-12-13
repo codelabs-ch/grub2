@@ -133,83 +133,6 @@ GRUB_MULTIBOOT (set_video_mode) (void)
 #endif
 #endif
 
-#ifdef grub_relocator_efi_boot
-static void
-efi_boot (struct grub_relocator *rel,
-	  grub_uint32_t target)
-{
-#ifdef GRUB_USE_MULTIBOOT2
-  struct grub_relocator_efi_state state_efi = MULTIBOOT2_EFI_INITIAL_STATE;
-#else
-  struct grub_relocator_efi_state state_efi = MULTIBOOT_EFI_INITIAL_STATE;
-#endif
-  state_efi.MULTIBOOT_EFI_ENTRY_REGISTER = GRUB_MULTIBOOT (payload_eip);
-  state_efi.MULTIBOOT_EFI_MBI_REGISTER = target;
-
-  grub_relocator_efi_boot (rel, state_efi);
-}
-#else
-#define grub_efi_is_finished	1
-static void
-efi_boot (struct grub_relocator *rel __attribute__ ((unused)),
-	  grub_uint32_t target __attribute__ ((unused)))
-{
-}
-#endif
-
-#if defined (__i386__) || defined (__x86_64__)
-static void
-normal_boot (struct grub_relocator *rel, struct grub_relocator32_state state)
-{
-  grub_relocator32_boot (rel, state, 0);
-}
-#else
-static void
-normal_boot (struct grub_relocator *rel, struct grub_relocator32_state state)
-{
-  grub_relocator32_boot (rel, state);
-}
-#endif
-
-static grub_err_t
-grub_multiboot_boot (void)
-{
-  grub_err_t err;
-
-#ifdef GRUB_USE_MULTIBOOT2
-  struct grub_relocator32_state state = MULTIBOOT2_INITIAL_STATE;
-#else
-  struct grub_relocator32_state state = MULTIBOOT_INITIAL_STATE;
-#endif
-  state.MULTIBOOT_ENTRY_REGISTER = GRUB_MULTIBOOT (payload_eip);
-
-  err = GRUB_MULTIBOOT (make_mbi) (&state.MULTIBOOT_MBI_REGISTER);
-
-  if (err)
-    return err;
-
-  if (grub_efi_is_finished)
-    normal_boot (GRUB_MULTIBOOT (relocator), state);
-  else
-    efi_boot (GRUB_MULTIBOOT (relocator), state.MULTIBOOT_MBI_REGISTER);
-
-  /* Not reached.  */
-  return GRUB_ERR_NONE;
-}
-
-static grub_err_t
-grub_multiboot_unload (void)
-{
-  GRUB_MULTIBOOT (free_mbi) ();
-
-  grub_relocator_unload (GRUB_MULTIBOOT (relocator));
-  GRUB_MULTIBOOT (relocator) = NULL;
-
-  grub_dl_unref (my_mod);
-
-  return GRUB_ERR_NONE;
-}
-
 static grub_uint64_t highest_load;
 
 #define MULTIBOOT_LOAD_ELF64
@@ -289,7 +212,7 @@ grub_cmd_multiboot (grub_command_t cmd __attribute__ ((unused)),
   grub_file_t file = 0;
   grub_err_t err;
 
-  grub_loader_unset ();
+  //grub_loader_unset ();
 
   highest_load = 0;
 
@@ -322,8 +245,10 @@ grub_cmd_multiboot (grub_command_t cmd __attribute__ ((unused)),
     return grub_error (GRUB_ERR_BAD_ARGUMENT, N_("filename expected"));
 
   file = grub_file_open (argv[0], GRUB_FILE_TYPE_MULTIBOOT_KERNEL);
-  if (! file)
-    return grub_errno;
+  if (! file) {
+	  grub_loader_unset ();
+	  return grub_errno;
+  }
 
   grub_dl_ref (my_mod);
 
@@ -340,9 +265,8 @@ grub_cmd_multiboot (grub_command_t cmd __attribute__ ((unused)),
   if (err)
     goto fail;
 
-  GRUB_MULTIBOOT (set_bootdev) ();
-
-  grub_loader_set (grub_multiboot_boot, grub_multiboot_unload, 0);
+  //GRUB_MULTIBOOT (set_bootdev) ();
+  //grub_loader_set (grub_multiboot_boot, grub_multiboot_unload, 0);
 
  fail:
   if (file)
