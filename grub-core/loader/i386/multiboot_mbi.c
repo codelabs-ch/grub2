@@ -36,6 +36,7 @@
 #include <grub/net.h>
 #include <grub/i18n.h>
 #include <grub/lib/cmdline.h>
+#include <grub/loader.h>
 
 #ifdef GRUB_MACHINE_EFI
 #include <grub/efi/efi.h>
@@ -125,6 +126,30 @@ load_kernel (grub_file_t file, const char *filename,
       if (header->bss_end_addr)
 	grub_memset ((grub_uint8_t *) source + load_size, 0,
 		     header->bss_end_addr - header->load_addr - load_size);
+
+	  grub_uint8_t *start_csl = (grub_uint8_t *)0x100000;
+
+	  int idx, diffs = 0;
+	  grub_uint8_t *start_mb = get_virtual_current_address (ch);
+	  grub_printf("COMPARING(multiboot) start 0x%p, size %x\n", start_csl, load_size);
+	  // compare images
+	  for (idx = 0; idx < load_size; idx++)
+	  {
+		  if (*(start_csl + idx) != *(start_mb + idx)) {
+			  grub_printf("%p:%02x/%02x\n", start_csl + idx,
+					  *(start_csl + idx), *(start_mb + idx));
+			  diffs++;
+		  }
+	  }
+	  grub_printf("\n %u bytes differ, %u bytes checked, \n", diffs, load_size);
+	  if (diffs == 0) {
+		  grub_printf("OK: Image identical\n");
+		  return GRUB_ERR_NONE;
+	  } else {
+		  grub_printf("ERROR: Diff detected\n");
+		  grub_loader_unset ();
+		  return GRUB_ERR_TEST_FAILURE;
+	  }
 
       grub_multiboot_payload_eip = header->entry_addr;
       return GRUB_ERR_NONE;
