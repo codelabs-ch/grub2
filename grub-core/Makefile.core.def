@@ -2779,3 +2779,9 @@ module = {
   cflags = '-Wno-uninitialized';
   cppflags = '-I$(srcdir)/lib/libtasn1-grub -I$(srcdir)/tests/asn1/';
 };
+
+module = {
+  name = csl;
+  common = loader/bsbsc/csl.c;
+  enable = x86;
+};
