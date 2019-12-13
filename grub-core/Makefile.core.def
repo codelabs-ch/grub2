@@ -2518,3 +2518,9 @@ module = {
   common = commands/i386/wrmsr.c;
   enable = x86;
 };
+
+module = {
+  name = csl;
+  common = loader/csl/csl.c;
+  enable = x86;
+};
