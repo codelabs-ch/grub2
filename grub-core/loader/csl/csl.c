@@ -88,15 +88,46 @@ static const char *cmd_names[] = {
 static grub_addr_t entry_point = GRUB_ULONG_MAX;
 
 static grub_err_t
+csl_eval_data_len (const char * const cmd_name,
+		const unsigned int condition,
+		const grub_size_t data_len)
+{
+	if (! condition)
+		return grub_error (GRUB_ERR_FILE_READ_ERROR,
+				"%s - unexpected data length 0x%" PRIxGRUB_SIZE,
+				cmd_name, data_len);
+	return GRUB_ERR_NONE;
+}
+
+static grub_err_t
+csl_read_address (const grub_file_t file,
+		const char * const cmd_name,
+		grub_uint64_t * address)
+{
+	if (grub_file_read (file, address, 8) != 8)
+		return grub_error (GRUB_ERR_FILE_READ_ERROR,
+				"%s - unable to read address", cmd_name);
+	if (*address > GRUB_ULONG_MAX)
+		return grub_error (GRUB_ERR_OUT_OF_RANGE,
+				"%s - address out of range 0x%" PRIxGRUB_UINT64_T,
+				cmd_name, *address);
+
+	return GRUB_ERR_NONE;
+}
+
+static grub_err_t
 csl_cmd_check_version (const grub_file_t file,
 		const grub_size_t data_length)
 {
 	grub_uint64_t vermagic = 0;
+	grub_err_t err;
 
-	if (data_length != CMD_CHECK_VERSION_DATA_LEN)
-		return grub_error (GRUB_ERR_FILE_READ_ERROR,
-				"%s - unexpected data length %u",
-				cmd_names[CMD_CHECK_VERSION], data_length);
+	err = csl_eval_data_len (cmd_names[CMD_CHECK_VERSION],
+			data_length == CMD_CHECK_VERSION_DATA_LEN,
+			data_length);
+	if (err != GRUB_ERR_NONE)
+		return err;
+
 	if (grub_file_read (file, &vermagic, CMD_CHECK_VERSION_DATA_LEN)
 			!= CMD_CHECK_VERSION_DATA_LEN)
 		return grub_error (GRUB_ERR_FILE_READ_ERROR,
@@ -104,7 +135,8 @@ csl_cmd_check_version (const grub_file_t file,
 				cmd_names[CMD_CHECK_VERSION]);
 	if (vermagic != my_vermagic)
 		return grub_error (GRUB_ERR_BAD_ARGUMENT,
-				"%s - version magic mismatch (got: 0x%llx, expected: 0x%llx)",
+				"%s - version magic mismatch [got: 0x%" PRIxGRUB_UINT64_T
+				", expected: 0x%" PRIxGRUB_UINT64_T "]",
 				cmd_names[CMD_CHECK_VERSION],
 				vermagic, my_vermagic);
 
@@ -120,25 +152,21 @@ csl_cmd_write (const grub_file_t file,
 	grub_err_t err;
 	grub_size_t content_len;
 
-	if (data_length % 8 != 0 || data_length < 16)
-		return grub_error (GRUB_ERR_FILE_READ_ERROR,
-				"%s - unexpected data length %u",
-				cmd_names[CMD_WRITE], data_length);
-	if (grub_file_read (file, &address, 8) != 8)
-		return grub_error (GRUB_ERR_FILE_READ_ERROR,
-				"%s - unable to read address",
-				cmd_names[CMD_WRITE]);
-	if (address > GRUB_ULONG_MAX)
-		return grub_error (GRUB_ERR_OUT_OF_RANGE,
-				"%s - address out of range 0x%llx",
-				cmd_names[CMD_WRITE], address);
+	err = csl_eval_data_len (cmd_names[CMD_WRITE],
+			data_length % 8 == 0 && data_length >= 16,
+			data_length);
+	if (err != GRUB_ERR_NONE)
+		return err;
+
+	err = csl_read_address (file, cmd_names[CMD_WRITE], &address);
+	if (err != GRUB_ERR_NONE)
+		return err;
 
 	content_len = data_length - 8;
 
-	grub_dprintf ("csl", "%s - address 0x%llx, content length 0x%llx\n",
-			cmd_names[CMD_WRITE],
-			(unsigned long long) address,
-			(unsigned long long) content_len);
+	grub_dprintf ("csl", "%s - address 0x%" PRIxGRUB_UINT64_T
+			", content length 0x%" PRIxGRUB_SIZE "\n",
+			cmd_names[CMD_WRITE], address, content_len);
 	err = grub_relocator_alloc_chunk_addr (relocator, &ch,
 			(grub_addr_t) address,
 			content_len);
@@ -148,7 +176,7 @@ csl_cmd_write (const grub_file_t file,
 	if (grub_file_read (file, get_virtual_current_address (ch),
 				content_len) != (grub_ssize_t) content_len)
 		return grub_error (GRUB_ERR_FILE_READ_ERROR,
-				"%s - unable to read 0x%x content data bytes",
+				"%s - unable to read 0x%" PRIxGRUB_SIZE " content data bytes",
 				cmd_names[CMD_WRITE], content_len);
 
 	return GRUB_ERR_NONE;
@@ -162,36 +190,32 @@ csl_cmd_fill (const grub_file_t file,
 	grub_relocator_chunk_t ch;
 	grub_err_t err;
 
-	if (data_length != CMD_FILL_PATTERN_DATA_LEN)
-		return grub_error (GRUB_ERR_FILE_READ_ERROR,
-				"%s - unexpected data length %u",
-				cmd_names[CMD_FILL], data_length);
-	if (grub_file_read (file, &address, 8) != 8)
-		return grub_error (GRUB_ERR_FILE_READ_ERROR,
-				"%s - unable to read address",
-				cmd_names[CMD_FILL]);
-	if (address > GRUB_ULONG_MAX)
-		return grub_error (GRUB_ERR_OUT_OF_RANGE,
-				"%s - address out of range 0x%llx",
-				cmd_names[CMD_FILL], address);
+	err = csl_eval_data_len (cmd_names[CMD_FILL],
+			data_length == CMD_FILL_PATTERN_DATA_LEN,
+			data_length);
+	if (err != GRUB_ERR_NONE)
+		return err;
+
+	err = csl_read_address(file, cmd_names[CMD_FILL], &address);
+	if (err != GRUB_ERR_NONE)
+		return err;
 	if (grub_file_read (file, &fill_length, 8) != 8)
 		return grub_error (GRUB_ERR_FILE_READ_ERROR,
 				"%s - unable to read fill length",
 				cmd_names[CMD_FILL]);
 	if (fill_length > GRUB_ULONG_MAX)
 		return grub_error (GRUB_ERR_OUT_OF_RANGE,
-				"%s - fill length is out of range - 0x%llx",
+				"%s - fill length is out of range - 0x%" PRIxGRUB_UINT64_T,
 				cmd_names[CMD_FILL], fill_length);
 	if (grub_file_read (file, &pattern, 8) != 8)
 		return grub_error (GRUB_ERR_FILE_READ_ERROR,
 				"%s - unable to read pattern",
 				cmd_names[CMD_FILL]);
 
-	grub_dprintf ("csl", "%s - address 0x%llx, fill length 0x%llx, pattern 0x%llx\n",
-			cmd_names[CMD_FILL],
-			(unsigned long long) address,
-			(unsigned long long) fill_length,
-			(unsigned long long) pattern);
+	grub_dprintf ("csl", "%s - address 0x%" PRIxGRUB_UINT64_T
+			", fill length 0x%" PRIxGRUB_UINT64_T
+			", pattern 0x%" PRIxGRUB_UINT64_T "\n",
+			cmd_names[CMD_FILL], address, fill_length, pattern);
 	err = grub_relocator_alloc_chunk_addr (relocator, &ch,
 			(grub_addr_t) address, (grub_size_t) fill_length);
 	if (err != GRUB_ERR_NONE)
@@ -207,23 +231,26 @@ csl_cmd_set_entry_point (const grub_file_t file,
 		const grub_size_t data_length)
 {
 	grub_uint64_t ep = 0;
+	grub_err_t err;
 
-	if (data_length != CMD_SET_ENTRY_POINT_DATA_LEN)
-		return grub_error (GRUB_ERR_FILE_READ_ERROR,
-				"%s - unexpected data length %u",
-				cmd_names[CMD_SET_ENTRY_POINT], data_length);
+	err = csl_eval_data_len (cmd_names[CMD_SET_ENTRY_POINT],
+			data_length == CMD_SET_ENTRY_POINT_DATA_LEN,
+			data_length);
+	if (err != GRUB_ERR_NONE)
+		return err;
+
 	if (grub_file_read (file, &ep, 8) != 8)
 		return grub_error (GRUB_ERR_FILE_READ_ERROR,
 				"%s - unable to read entry point",
 				cmd_names[CMD_SET_ENTRY_POINT]);
 	if (ep > GRUB_ULONG_MAX)
 		return grub_error (GRUB_ERR_OUT_OF_RANGE,
-				"%s - entry point 0x%llx not reachable",
+				"%s - entry point 0x%" PRIxGRUB_UINT64_T " not reachable",
 				cmd_names[CMD_SET_ENTRY_POINT], ep);
 	entry_point = (grub_addr_t) ep;
 
-	grub_dprintf ("csl", "%s - setting entry point to 0x%llx\n",
-			cmd_names[CMD_SET_ENTRY_POINT], (unsigned long long) entry_point);
+	grub_dprintf ("csl", "%s - setting entry point to 0x%" PRIxGRUB_ADDR "\n",
+			cmd_names[CMD_SET_ENTRY_POINT], entry_point);
 	return GRUB_ERR_NONE;
 }
 
@@ -231,6 +258,7 @@ static grub_err_t
 csl_cmd_check_cpuid (const grub_file_t file,
 		const grub_size_t data_length)
 {
+	grub_err_t err;
 	grub_uint64_t word = 0;
 	grub_uint32_t leaf = 0, mask = 0, value = 0;
 	grub_uint32_t eax, ebx, ecx = 0, edx, result;
@@ -244,10 +272,11 @@ csl_cmd_check_cpuid (const grub_file_t file,
 	/* required by protocol, but to be sure */
 	msg[MAX_CHECK_STRING] = '\0';
 
-	if (data_length != CMD_CHECK_CPUID_DATA_LEN)
-		return grub_error (GRUB_ERR_FILE_READ_ERROR,
-				"%s - unexpected data length %u",
-				cmd_names[CMD_CHECK_CPUID], data_length);
+	err = csl_eval_data_len (cmd_names[CMD_CHECK_CPUID],
+			data_length == CMD_CHECK_CPUID_DATA_LEN,
+			data_length);
+	if (err != GRUB_ERR_NONE)
+		return err;
 
 	/* ecx is not currently used as input to CPUID */
 	if (grub_file_read (file, &ecx, 4) != 4)
@@ -315,8 +344,8 @@ csl_dispatch (const grub_file_t file,
 		const grub_uint16_t cmd,
 		const grub_uint64_t length)
 {
-	grub_dprintf ("csl", "Dispatching cmd %u, data length 0x%llx\n",
-			cmd, (unsigned long long) length);
+	grub_dprintf ("csl", "Dispatching cmd %u, data length 0x%"
+			PRIxGRUB_UINT64_T "\n", cmd, length);
 
 	/*
 	 * grub_file_read can only read grub_ssize_t bytes,
@@ -325,7 +354,7 @@ csl_dispatch (const grub_file_t file,
 	 */
 	if ((grub_ssize_t) length < 0)
 		return grub_error (GRUB_ERR_OUT_OF_RANGE,
-				"data length out of range - 0x%llx", length);
+				"data length out of range - 0x%" PRIxGRUB_UINT64_T, length);
 
 	switch (cmd)
 	{
