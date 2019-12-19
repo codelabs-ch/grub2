@@ -100,8 +100,8 @@ csl_eval_data_len (const char * const cmd_name,
 }
 
 static grub_err_t
-csl_read_address (const grub_file_t file,
-		const char * const cmd_name,
+csl_read_address (const char * const cmd_name,
+		const grub_file_t file,
 		grub_uint64_t * address)
 {
 	if (grub_file_read (file, address, 8) != 8)
@@ -158,7 +158,7 @@ csl_cmd_write (const grub_file_t file,
 	if (err != GRUB_ERR_NONE)
 		return err;
 
-	err = csl_read_address (file, cmd_names[CMD_WRITE], &address);
+	err = csl_read_address (cmd_names[CMD_WRITE], file, &address);
 	if (err != GRUB_ERR_NONE)
 		return err;
 
@@ -196,7 +196,7 @@ csl_cmd_fill (const grub_file_t file,
 	if (err != GRUB_ERR_NONE)
 		return err;
 
-	err = csl_read_address(file, cmd_names[CMD_FILL], &address);
+	err = csl_read_address(cmd_names[CMD_FILL], file, &address);
 	if (err != GRUB_ERR_NONE)
 		return err;
 	if (grub_file_read (file, &fill_length, 8) != 8)
