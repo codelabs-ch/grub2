@@ -218,7 +218,8 @@ csl_cmd_set_entry_point (const grub_file_t file,
 				cmd_names[CMD_SET_ENTRY_POINT]);
 	if (ep > GRUB_ULONG_MAX)
 		return grub_error (GRUB_ERR_OUT_OF_RANGE,
-				"%s - entry point 0x%llx not reachable", ep);
+				"%s - entry point 0x%llx not reachable",
+				cmd_names[CMD_SET_ENTRY_POINT], ep);
 	entry_point = (grub_addr_t) ep;
 
 	grub_dprintf ("csl", "%s - setting entry point to 0x%llx\n",
