@@ -2521,6 +2521,6 @@ module = {
 
 module = {
   name = csl;
-  common = loader/csl/csl.c;
+  common = loader/bsbsc/csl.c;
   enable = x86;
 };
