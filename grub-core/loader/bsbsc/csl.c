@@ -1,4 +1,4 @@
-/* csl.c - Command Stream Loader (CSL) */
+/* csl.c - Command Stream Loader (CSL) implementation */
 /*
  *  GRUB  --  GRand Unified Bootloader
  *  Copyright (C) 2019  codelabs GmbH
@@ -23,7 +23,6 @@
 #include <grub/misc.h>
 #include <grub/extcmd.h>
 #include <grub/i18n.h>
-#include <grub/file.h>
 #include <grub/loader.h>
 #include <grub/i386/relocator.h>
 #include <grub/i386/cpuid.h>
@@ -31,6 +30,8 @@
 #ifdef GRUB_MACHINE_EFI
 #include <grub/efi/efi.h>
 #endif
+
+#include "csl.h"
 
 GRUB_MOD_LICENSE ("GPLv3+");
 
@@ -87,6 +88,13 @@ static const char *cmd_names[] = {
 
 static grub_addr_t entry_point = GRUB_ULONG_MAX;
 
+struct csl_file_operations csl_fs_ops = {
+	.open  = grub_file_open,
+	.read  = grub_file_read,
+	.size  = grub_file_size,
+	.close = grub_file_close,
+};
+
 static grub_err_t
 csl_eval_data_len (const char * const cmd_name,
 		const unsigned int condition,
@@ -104,7 +112,7 @@ csl_read_address (const char * const cmd_name,
 		const grub_file_t file,
 		grub_uint64_t * address)
 {
-	if (grub_file_read (file, address, 8) != 8)
+	if (csl_fs_ops.read (file, address, 8) != 8)
 		return grub_error (GRUB_ERR_FILE_READ_ERROR,
 				"%s - unable to read address", cmd_name);
 	if (*address > GRUB_ULONG_MAX)
@@ -128,7 +136,7 @@ csl_cmd_check_version (const grub_file_t file,
 	if (err != GRUB_ERR_NONE)
 		return err;
 
-	if (grub_file_read (file, &vermagic, CMD_CHECK_VERSION_DATA_LEN)
+	if (csl_fs_ops.read (file, &vermagic, CMD_CHECK_VERSION_DATA_LEN)
 			!= CMD_CHECK_VERSION_DATA_LEN)
 		return grub_error (GRUB_ERR_FILE_READ_ERROR,
 				"%s - unable to read version magic",
@@ -173,7 +181,7 @@ csl_cmd_write (const grub_file_t file,
 	if (err != GRUB_ERR_NONE)
 		return err;
 
-	if (grub_file_read (file, get_virtual_current_address (ch),
+	if (csl_fs_ops.read (file, get_virtual_current_address (ch),
 				content_len) != (grub_ssize_t) content_len)
 		return grub_error (GRUB_ERR_FILE_READ_ERROR,
 				"%s - unable to read 0x%" PRIxGRUB_SIZE " content data bytes",
@@ -199,7 +207,7 @@ csl_cmd_fill (const grub_file_t file,
 	err = csl_read_address(cmd_names[CMD_FILL], file, &address);
 	if (err != GRUB_ERR_NONE)
 		return err;
-	if (grub_file_read (file, &fill_length, 8) != 8)
+	if (csl_fs_ops.read (file, &fill_length, 8) != 8)
 		return grub_error (GRUB_ERR_FILE_READ_ERROR,
 				"%s - unable to read fill length",
 				cmd_names[CMD_FILL]);
@@ -207,7 +215,7 @@ csl_cmd_fill (const grub_file_t file,
 		return grub_error (GRUB_ERR_OUT_OF_RANGE,
 				"%s - fill length is out of range - 0x%" PRIxGRUB_UINT64_T,
 				cmd_names[CMD_FILL], fill_length);
-	if (grub_file_read (file, &pattern, 8) != 8)
+	if (csl_fs_ops.read (file, &pattern, 8) != 8)
 		return grub_error (GRUB_ERR_FILE_READ_ERROR,
 				"%s - unable to read pattern",
 				cmd_names[CMD_FILL]);
@@ -239,7 +247,7 @@ csl_cmd_set_entry_point (const grub_file_t file,
 	if (err != GRUB_ERR_NONE)
 		return err;
 
-	if (grub_file_read (file, &ep, 8) != 8)
+	if (csl_fs_ops.read (file, &ep, 8) != 8)
 		return grub_error (GRUB_ERR_FILE_READ_ERROR,
 				"%s - unable to read entry point",
 				cmd_names[CMD_SET_ENTRY_POINT]);
@@ -279,29 +287,29 @@ csl_cmd_check_cpuid (const grub_file_t file,
 		return err;
 
 	/* ecx is not currently used as input to CPUID */
-	if (grub_file_read (file, &ecx, 4) != 4)
+	if (csl_fs_ops.read (file, &ecx, 4) != 4)
 		return grub_error (GRUB_ERR_FILE_READ_ERROR,
 				"%s - unable to read ecx field",
 				cmd_names[CMD_CHECK_CPUID]);
-	if (grub_file_read (file, &leaf, 4) != 4)
+	if (csl_fs_ops.read (file, &leaf, 4) != 4)
 		return grub_error (GRUB_ERR_FILE_READ_ERROR,
 				"%s - unable to read eax field",
 				cmd_names[CMD_CHECK_CPUID]);
-	if (grub_file_read (file, &value, 4) != 4)
+	if (csl_fs_ops.read (file, &value, 4) != 4)
 		return grub_error (GRUB_ERR_FILE_READ_ERROR,
 				"%s - unable to read value field",
 				cmd_names[CMD_CHECK_CPUID]);
-	if (grub_file_read (file, &mask, 4) != 4)
+	if (csl_fs_ops.read (file, &mask, 4) != 4)
 		return grub_error (GRUB_ERR_FILE_READ_ERROR,
 				"%s - unable to read mask field",
 				cmd_names[CMD_CHECK_CPUID]);
-	if (grub_file_read (file, &word, 8) != 8)
+	if (csl_fs_ops.read (file, &word, 8) != 8)
 		return grub_error (GRUB_ERR_FILE_READ_ERROR,
 				"%s - unable to read result register",
 				cmd_names[CMD_CHECK_CPUID]);
 	result_register = (grub_uint8_t) word & 0xff;
 
-	if (grub_file_read (file, &msg, MAX_CHECK_STRING) != MAX_CHECK_STRING)
+	if (csl_fs_ops.read (file, &msg, MAX_CHECK_STRING) != MAX_CHECK_STRING)
 		return grub_error (GRUB_ERR_FILE_READ_ERROR,
 				"%s - unable to read message",
 				cmd_names[CMD_CHECK_CPUID]);
@@ -348,7 +356,7 @@ csl_dispatch (const grub_file_t file,
 			PRIxGRUB_UINT64_T "\n", cmd, length);
 
 	/*
-	 * grub_file_read can only read grub_ssize_t bytes,
+	 * csl_fs_ops.read can only read grub_ssize_t bytes,
 	 * be conservative and assume the whole data is read via
 	 * grub_file_read.
 	 */
@@ -425,32 +433,32 @@ csl_cmd (grub_extcmd_context_t ctxt __attribute__ ((unused)),
 	if (argc != 1)
 		return grub_error (GRUB_ERR_BAD_ARGUMENT, "filename expected");
 
-	file = grub_file_open (argv[0], GRUB_FILE_TYPE_NONE);
+	file = csl_fs_ops.open (argv[0], GRUB_FILE_TYPE_NONE);
 	if (! file)
 		return grub_errno;
-	if (grub_file_size (file) % 8 != 0)
+	if (csl_fs_ops.size (file) % 8 != 0)
 	{
-		grub_file_close (file);
+		csl_fs_ops.close (file);
 		return grub_error (GRUB_ERR_FILE_READ_ERROR,
 				"'%s' - file size not a multiple of 8 bytes", argv[0]);
 	}
 
-	while (grub_file_read (file, &cmd, 8) == 8)
+	while (csl_fs_ops.read (file, &cmd, 8) == 8)
 	{
-		if (grub_file_read (file, &length, 8) != 8)
+		if (csl_fs_ops.read (file, &length, 8) != 8)
 		{
-			grub_file_close (file);
+			csl_fs_ops.close (file);
 			return grub_error (GRUB_ERR_FILE_READ_ERROR,
 					"'%s' - unable to read data length", argv[0]);
 		}
 		err = csl_dispatch (file, (grub_uint16_t) cmd & 0xffff, length);
 		if (err != GRUB_ERR_NONE) {
-			grub_file_close (file);
+			csl_fs_ops.close (file);
 			return err;
 		}
 	}
 
-	grub_file_close (file);
+	csl_fs_ops.close (file);
 
 	grub_loader_set (csl_boot, csl_unload, 0);
 
