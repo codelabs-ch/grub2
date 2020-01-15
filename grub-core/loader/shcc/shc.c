@@ -22,6 +22,7 @@
 #include <grub/misc.h>
 #include <grub/extcmd.h>
 #include <grub/dl.h>
+#include <grub/crypto.h>
 
 #include "csl.h"
 #include "shc.h"
@@ -39,18 +40,22 @@ static grub_off_t encoded_file_size = 0;
 struct reader_state_type {
 	grub_file_t fd;
 	grub_uint64_t bytes_in_block;
-	grub_uint64_t bytes_read;
+	grub_uint64_t total_bytes_read;
 	unsigned int shc_valid;
-	grub_uint8_t *next_hash;
+	grub_uint8_t next_hash[SHA512_HASHSUM_LEN];
+	grub_uint8_t *data;
 };
 
 static struct reader_state_type state = {
-	.fd             = 0,
-	.bytes_in_block = 0,
-	.bytes_read     = 0,
-	.shc_valid      = 0,
-	.next_hash      = NULL,
+	.fd               = 0,
+	.bytes_in_block   = 0,
+	.total_bytes_read = 0,
+	.shc_valid        = 0,
+	.data             = NULL,
 };
+
+static const gcry_md_spec_t *hasher = NULL;
+static void *hash_ctx = NULL;
 
 static unsigned
 block_data_len (void)
@@ -60,23 +65,23 @@ block_data_len (void)
 
 #define bdl block_data_len()
 
-static unsigned prepare_first_block (void);
-
 /* Invalidate global state and cleanup */
 static void
 invalidate (void)
 {
 	state.shc_valid = 0;
-	if (state.next_hash)
+	if (state.data)
 	{
-		grub_free (state.next_hash);
-		state.next_hash = NULL;
+		grub_free (state.data);
+		state.data = NULL;
 	}
 	if (header.root_hash)
 	{
 		grub_free (header.root_hash);
 		header.root_hash = NULL;
 	}
+
+	// TODO hasher cleanup
 	grub_file_close (state.fd);
 }
 
@@ -92,8 +97,17 @@ verify (void)
 	return 1;
 }
 
+static void
+print_hash (const grub_uint8_t * const h)
+{
+	unsigned i;
+	grub_printf ("0x");
+	for (i = 0; i < SHA512_HASHSUM_LEN; i++)
+		grub_printf ("%02x", h[i]);
+}
+
 static unsigned
-read_hash (void)
+read_block (void)
 {
 	if (grub_file_read (state.fd, state.next_hash, header.hashsum_len)
 			!= header.hashsum_len)
@@ -101,41 +115,62 @@ read_hash (void)
 		grub_printf ("SHC - unable to read block hash value\n");
 		return 0;
 	}
+	grub_printf("hash of this block read");
+	print_hash(state.next_hash);
+	grub_printf("\n");
+	if (grub_file_read (state.fd, state.data, bdl) != (grub_ssize_t) bdl)
+	{
+		grub_printf ("SHC - unable to read block data\n");
+		return 0;
+	}
 	return 1;
 }
 
 static unsigned
-prepare_first_block (void)
+hash_valid (const grub_uint8_t * const h)
 {
-	grub_uint8_t byte;
-	unsigned int i;
+	unsigned res = 0;
 
-	/* validate if first block data matches root hash */
-	// TODO
+	// TODO:move to init, also cleanup.
+	// TODO:check all results
+	hasher->write (hash_ctx, state.next_hash, SHA512_HASHSUM_LEN);
+	hasher->write (hash_ctx, state.data, bdl);
 
-	/* store hash of next block in global state */
-	if (! read_hash ())
-		return 0;
+	hasher->final(hash_ctx);
 
-	/* skip initial padding bytes */
-	for (i = 1; i <= header.padding_len; i++)
-		grub_file_read (state.fd, &byte, 1);
+	grub_printf("calc hash ");
+	print_hash(hasher->read (hash_ctx));
+	grub_printf("\n");
 
-	state.bytes_in_block = bdl - header.padding_len;
-	return 1;
+	if (grub_crypto_memcmp (h, hasher->read (hash_ctx), hasher->mdlen) != 0)
+		res = 1;
+
+	// TODO explicitly memset?
+	return res;
 }
 
 static unsigned
-prepare_next_block (void)
+load_next_block (const grub_uint32_t offset __attribute__ ((unused)))
 {
-	/* check if hash value is correct */
-	//TODO
+	grub_uint8_t current_hash[SHA512_HASHSUM_LEN];
 
-	/* store next hash in global state */
-	if (! read_hash ())
+	// TODO check result
+	grub_memcpy (current_hash, state.next_hash, SHA512_HASHSUM_LEN);
+
+	grub_printf("current hash ");
+	print_hash(current_hash);
+	grub_printf("\n");
+
+	if (! read_block())
 		return 0;
 
-	state.bytes_in_block = bdl;
+	if (! hash_valid (current_hash)) {
+		// TODO print hashes
+		grub_printf ("SHC - ERROR invalid hash detected\n");
+		return 0;
+	}
+
+	// TODO: re-init buffers for read.
 	return 1;
 }
 
@@ -216,7 +251,7 @@ read_header (void)
 		grub_printf ("SHC - unable to allocate bytes for root hash\n");
 		goto header_invalid;
 	}
-	if (! read_field (&header.root_hash, header.hashsum_len,
+	if (! read_field (header.root_hash, header.hashsum_len,
 				"unable to read root hash")) {
 		grub_free (header.root_hash);
 		return 0;
@@ -244,6 +279,11 @@ shc_open (const char *name,
 	if (! read_header ())
 		return NULL;
 
+	if (! verify ()) {
+		grub_file_close (state.fd);
+		return NULL;
+	}
+
 	grub_printf ("SHC - block count       : %u\n", header.block_count);
 	grub_printf ("SHC - initial padding   : %u\n", header.padding_len);
 	grub_printf ("SHC - block size        : %u\n", header.block_size);
@@ -253,18 +293,21 @@ shc_open (const char *name,
 	encoded_file_size = header.block_count * bdl - header.padding_len;
 	grub_printf ("SHC - encoded file size : %llu\n", encoded_file_size);
 
-	if (! verify ()) {
-		grub_file_close (state.fd);
-		return NULL;
-	}
+	grub_printf ("SHC - root hash         : ");
+	print_hash(header.root_hash);
+	grub_printf ("\n");
 
-	state.next_hash = grub_malloc (header.hashsum_len);
-	if (state.next_hash == NULL) {
-		grub_printf ("SHC - error allocating storage for hashsum\n");
+	state.data = grub_malloc (bdl);
+	if (state.data == NULL) {
+		grub_printf ("SHC - error allocating data buffer\n");
 		invalidate ();
 		return NULL;
 	}
-	if (! prepare_first_block ()) {
+
+	/* set root hash as next hash and load first block */
+	// TODO check result?
+	grub_memcpy (state.next_hash, header.root_hash, SHA512_HASHSUM_LEN);
+	if (! load_next_block (header.padding_len)) {
 		invalidate ();
 		return NULL;
 	}
@@ -293,11 +336,11 @@ shc_read (grub_file_t file __attribute__ ((unused)),
 	if (! state.shc_valid)
 		return -1;
 
-	if (state.bytes_read >= shc_size (state.fd))
+	if (state.total_bytes_read >= shc_size (state.fd))
 		return 0;
 
 	if (! state.bytes_in_block)
-		if (! prepare_next_block ())
+		if (! load_next_block (0))
 			goto invalid;
 
 	while (to_read) {
@@ -309,7 +352,7 @@ shc_read (grub_file_t file __attribute__ ((unused)),
 			ptr = (grub_uint8_t *) ptr + state.bytes_in_block;
 			to_read -= state.bytes_in_block;
 			if (to_read)
-				if (! prepare_next_block ())
+				if (! load_next_block (0))
 					goto invalid;
 		}
 		else
@@ -322,7 +365,7 @@ shc_read (grub_file_t file __attribute__ ((unused)),
 		}
 	}
 
-	state.bytes_read += len;
+	state.total_bytes_read += len;
 	return len;
 
 invalid:
@@ -350,6 +393,14 @@ shc_init (grub_extcmd_context_t ctxt __attribute__ ((unused)),
 	csl_fs_ops.read  = shc_read;
 	csl_fs_ops.size  = shc_size;
 	csl_fs_ops.close = shc_close;
+
+	hasher = grub_crypto_lookup_md_by_name ("sha512");
+	if (!hasher)
+		return grub_error (GRUB_ERR_BAD_ARGUMENT, "hasher init failed");
+
+	hash_ctx = grub_zalloc (hasher->contextsize);
+	if (!hash_ctx)
+		return grub_error (GRUB_ERR_BAD_ARGUMENT, "hasher ctx init failed");
 
 	return GRUB_ERR_NONE;
 }
