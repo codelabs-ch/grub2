@@ -21,14 +21,14 @@
 #define SHC_H
 
 #define SHC_VERMAGIC	0xe6019598
-#define SHC_HEADER_SIZE 56
+#define SHC_HEADER_SIZE 100
 
 struct shc_header_type {
 	grub_uint32_t version_magic;
 	grub_uint32_t block_count;
 	grub_uint32_t block_size;
 	grub_uint32_t sig_len;
-	grub_uint16_t	header_size;
+	grub_uint16_t header_size;
 	grub_uint16_t hashsum_len;
 	grub_uint16_t hash_algo_id_1;
 	grub_uint16_t hash_algo_id_2;
