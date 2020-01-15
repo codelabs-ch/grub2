@@ -20,10 +20,16 @@
 #ifndef SHC_H
 #define SHC_H
 
-#define SHC_VERMAGIC	0xe6019598
-#define SHC_HEADER_SIZE 100
+#define SHC_VERMAGIC 0xe6019598
 
-struct shc_header_type {
+typedef enum
+{
+	SHC_HASH_ALGO_NONE     = 0,
+	SHC_HASH_ALGO_SHA2_512 = 1,
+} shc_hash_algo_t;
+
+struct shc_header_t
+{
 	grub_uint32_t version_magic;
 	grub_uint32_t block_count;
 	grub_uint32_t block_size;

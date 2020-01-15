@@ -28,7 +28,11 @@
 
 GRUB_MOD_LICENSE ("GPLv3+");
 
-static struct shc_header_type header;
+#define SHA512_HASHSUM_LEN 64
+
+static struct shc_header_t header = {
+	.root_hash = NULL,
+};
 
 static grub_off_t encoded_file_size = 0;
 
@@ -67,6 +71,11 @@ invalidate (void)
 	{
 		grub_free (state.next_hash);
 		state.next_hash = NULL;
+	}
+	if (header.root_hash)
+	{
+		grub_free (header.root_hash);
+		header.root_hash = NULL;
 	}
 	grub_file_close (state.fd);
 }
@@ -130,28 +139,110 @@ prepare_next_block (void)
 	return 1;
 }
 
+static unsigned
+read_field (void *field,
+		const grub_ssize_t width,
+		const char * const err_msg)
+{
+	if (grub_file_read (state.fd, field, width) != width)
+	{
+		grub_printf ("SHC - %s\n", err_msg);
+		goto header_invalid;
+	}
+
+	return 1;
+
+header_invalid:
+	grub_file_close (state.fd);
+	return 0;
+}
+
+static unsigned
+read_header (void)
+{
+	if (! read_field (&header.version_magic, 4, "unable to read version magic"))
+		return 0;
+	if (header.version_magic != SHC_VERMAGIC)
+	{
+		grub_printf ("SHC - version magic mismatch [got: 0x%x, expected: 0x%x]\n",
+				header.version_magic, SHC_VERMAGIC);
+		goto header_invalid;
+	}
+
+	if (! read_field (&header.block_count, 4, "unable to read block_count"))
+		return 0;
+	if (! read_field (&header.block_size, 4, "unable to read block size"))
+		return 0;
+	if (! read_field (&header.sig_len, 4, "unable to read signature length"))
+		return 0;
+	if (! read_field (&header.header_size, 2, "unable to read header size"))
+		return 0;
+	if (! read_field (&header.hashsum_len, 2, "unable to read hashsum length"))
+		return 0;
+	if (! read_field (&header.hash_algo_id_1, 2, "unable to read hash ID 1"))
+		return 0;
+	if (! read_field (&header.hash_algo_id_2, 2, "unable to read hash ID 2"))
+		return 0;
+	if (! read_field (&header.hash_algo_id_3, 2, "unable to read hash ID 3"))
+		return 0;
+	if (! read_field (&header.hash_algo_id_4, 2, "unable to read hash ID 4"))
+		return 0;
+	if (! read_field (&header.sig_algo_id, 2, "unable to read signature ID"))
+		return 0;
+	if (! read_field (&header.reserved, 2, "unable to read reserved field"))
+		return 0;
+	if (! read_field (&header.padding_len, 4, "unable to read padding length"))
+		return 0;
+
+	if (! (header.hash_algo_id_1 == SHC_HASH_ALGO_SHA2_512
+				&& header.hash_algo_id_2 == SHC_HASH_ALGO_NONE
+				&& header.hash_algo_id_3 == SHC_HASH_ALGO_NONE
+				&& header.hash_algo_id_4 == SHC_HASH_ALGO_NONE))
+	{
+		grub_printf ("SHC - unsupported hash algorithm config "
+				"(1: %u, 2: %u, 3: %u, 4: %u)\n",
+				header.hash_algo_id_1, header.hash_algo_id_2,
+				header.hash_algo_id_3, header.hash_algo_id_4);
+		goto header_invalid;
+	}
+	if (header.hashsum_len != SHA512_HASHSUM_LEN) {
+		grub_printf ("SHC - unexpected hashsum length %u, expected %u\n",
+				header.hashsum_len, SHA512_HASHSUM_LEN);
+		goto header_invalid;
+	}
+
+	header.root_hash = grub_malloc (header.hashsum_len);
+	if (! header.root_hash) {
+		grub_printf ("SHC - unable to allocate bytes for root hash\n");
+		goto header_invalid;
+	}
+	if (! read_field (&header.root_hash, header.hashsum_len,
+				"unable to read root hash")) {
+		grub_free (header.root_hash);
+		return 0;
+	}
+
+	return 1;
+
+header_invalid:
+	grub_file_close (state.fd);
+	return 0;
+}
+
 static grub_file_t
 shc_open (const char *name,
 		enum grub_file_type type __attribute__ ((unused)))
 {
 	state.fd = grub_file_open (name, GRUB_FILE_TYPE_NONE);
-	if (! state.fd) {
+
+	if (! state.fd)
+	{
 		grub_printf ("SHC - unable to open '%s'\n", name);
 		return NULL;
 	}
 
-	if (grub_file_read (state.fd, &header, SHC_HEADER_SIZE) != SHC_HEADER_SIZE) {
-		grub_printf ("SHC - unable to read header data, not a chain?\n");
-		grub_file_close (state.fd);
+	if (! read_header ())
 		return NULL;
-	}
-
-	if (header.version_magic != SHC_VERMAGIC) {
-		grub_printf ("SHC - version magic mismatch [got: 0x%x, expected: 0x%x]\n",
-				header.version_magic, SHC_VERMAGIC);
-		grub_file_close (state.fd);
-		return NULL;
-	}
 
 	grub_printf ("SHC - block count       : %u\n", header.block_count);
 	grub_printf ("SHC - initial padding   : %u\n", header.padding_len);
@@ -212,7 +303,7 @@ shc_read (grub_file_t file __attribute__ ((unused)),
 	while (to_read) {
 		if (to_read >= state.bytes_in_block)
 	   	{
-			if (grub_file_read (state.fd, ptr, state.bytes_in_block) 
+			if (grub_file_read (state.fd, ptr, state.bytes_in_block)
 					!= (grub_ssize_t) state.bytes_in_block)
 				goto invalid;
 			ptr = (grub_uint8_t *) ptr + state.bytes_in_block;
@@ -220,7 +311,7 @@ shc_read (grub_file_t file __attribute__ ((unused)),
 			if (to_read)
 				if (! prepare_next_block ())
 					goto invalid;
-		} 
+		}
 		else
 	   	{
 			state.bytes_in_block -= to_read;
@@ -246,7 +337,7 @@ shc_close (grub_file_t file)
 	if (!state.shc_valid)
 		return GRUB_ERR_NONE;
 
-	return grub_file_close(file);
+	return grub_file_close (file);
 }
 
 static grub_err_t
@@ -273,5 +364,6 @@ GRUB_MOD_INIT(shc)
 
 GRUB_MOD_FINI(shc)
 {
+	invalidate();
 	grub_unregister_extcmd (cmd);
 }
