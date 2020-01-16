@@ -39,31 +39,42 @@ static grub_off_t encoded_file_size = 0;
 
 struct reader_state_type {
 	grub_file_t fd;
-	grub_uint64_t bytes_in_block;
 	grub_uint64_t total_bytes_read;
 	unsigned int shc_valid;
 	grub_uint8_t next_hash[SHA512_HASHSUM_LEN];
+	grub_uint8_t *read_pos;
 	grub_uint8_t *data;
 };
 
 static struct reader_state_type state = {
 	.fd               = 0,
-	.bytes_in_block   = 0,
 	.total_bytes_read = 0,
 	.shc_valid        = 0,
+	.read_pos         = NULL,
 	.data             = NULL,
 };
 
 static const gcry_md_spec_t *hasher = NULL;
 static void *hash_ctx = NULL;
 
-static unsigned
+static inline grub_uint32_t
 block_data_len (void)
 {
 	return header.block_size - header.hashsum_len;
 }
-
 #define bdl block_data_len()
+
+static inline grub_uint32_t
+buffer_bytes (void)
+{
+	return bdl - (state.read_pos - state.data);
+}
+
+static inline unsigned
+buffer_empty (void)
+{
+	return buffer_bytes() == 0;
+}
 
 /* Invalidate global state and cleanup */
 static void
@@ -170,7 +181,10 @@ load_next_block (const grub_uint32_t offset __attribute__ ((unused)))
 	if (! hash_valid (current_hash))
 		return 0;
 
-	// TODO: re-init buffers for read.
+	grub_printf ("state.data %p\n", state.data);
+	grub_printf ("offset %u\n", offset);
+	state.read_pos = state.data + offset;
+	grub_printf ("state.read_pos %p\n", state.read_pos);
 	return 1;
 }
 
@@ -264,6 +278,18 @@ header_invalid:
 	return 0;
 }
 
+static grub_uint32_t
+copy_buffer (void *ptr, grub_uint32_t len)
+{
+	if (buffer_bytes () < len)
+		return 0;
+
+	// TODO check result
+	grub_memcpy (ptr, state.read_pos, len);
+	state.read_pos += len;
+	return len;
+}
+
 static grub_file_t
 shc_open (const char *name,
 		enum grub_file_type type __attribute__ ((unused)))
@@ -327,11 +353,12 @@ shc_size (grub_file_t file __attribute__ ((unused)))
 
 static grub_ssize_t
 shc_read (grub_file_t file __attribute__ ((unused)),
-		void *buf,
+		void *buf __attribute__ ((unused)),
 		grub_size_t len)
 {
 	grub_size_t to_read = len;
 	void *ptr = buf;
+	grub_uint32_t copied;
 
 	if (! state.shc_valid)
 		return -1;
@@ -339,27 +366,26 @@ shc_read (grub_file_t file __attribute__ ((unused)),
 	if (state.total_bytes_read >= shc_size (state.fd))
 		return 0;
 
-	if (! state.bytes_in_block)
+	if (buffer_empty())
 		if (! load_next_block (0))
 			goto invalid;
 
 	while (to_read) {
-		if (to_read >= state.bytes_in_block)
+		if (to_read >= buffer_bytes ())
 	   	{
-			if (grub_file_read (state.fd, ptr, state.bytes_in_block)
-					!= (grub_ssize_t) state.bytes_in_block)
+			copied = copy_buffer (ptr, buffer_bytes ());
+			if (! copied)
 				goto invalid;
-			ptr = (grub_uint8_t *) ptr + state.bytes_in_block;
-			to_read -= state.bytes_in_block;
+			ptr = (grub_uint8_t *) ptr + copied;
+			to_read -= copied;
 			if (to_read)
 				if (! load_next_block (0))
 					goto invalid;
 		}
 		else
 	   	{
-			state.bytes_in_block -= to_read;
-			if (grub_file_read (state.fd, ptr, to_read)
-					!= (grub_ssize_t) to_read)
+			copied = copy_buffer (ptr, to_read);
+			if (! copied)
 				goto invalid;
 			to_read = 0;
 		}
