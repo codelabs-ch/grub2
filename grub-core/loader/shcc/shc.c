@@ -299,7 +299,7 @@ shc_open (const char *name,
 	if (state.shc_valid)
 		return NULL;
 
-	state.fd = grub_file_open (name, GRUB_FILE_TYPE_NONE);
+	state.fd = grub_file_open (name, GRUB_FILE_TYPE_SHC);
 
 	if (! state.fd)
 	{
