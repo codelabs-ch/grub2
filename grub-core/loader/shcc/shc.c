@@ -79,6 +79,17 @@ buffer_empty (void)
 	return buffer_bytes() == 0;
 }
 
+/* Close fd if not already closed */
+static void
+close_fd (void)
+{
+	if (state.fd)
+	{
+		grub_file_close (state.fd);
+		state.fd = NULL;
+	}
+}
+
 /* Invalidate global state and cleanup */
 static void
 invalidate (void)
@@ -96,14 +107,12 @@ invalidate (void)
 		grub_free (header.root_hash);
 		header.root_hash = NULL;
 	}
-
 	if (hash_ctx)
 	{
 		grub_free (hash_ctx);
 		hash_ctx = NULL;
 	}
-
-	grub_file_close (state.fd);
+	close_fd ();
 }
 
 /*
@@ -205,7 +214,7 @@ read_field (void *field,
 	return 1;
 
 header_invalid:
-	grub_file_close (state.fd);
+	close_fd ();
 	return 0;
 }
 
@@ -277,7 +286,7 @@ read_header (void)
 	return 1;
 
 header_invalid:
-	grub_file_close (state.fd);
+	close_fd ();
 	return 0;
 }
 
@@ -311,7 +320,7 @@ shc_open (const char *name,
 		return NULL;
 
 	if (! verify ()) {
-		grub_file_close (state.fd);
+		close_fd ();
 		return NULL;
 	}
 
@@ -319,13 +328,13 @@ shc_open (const char *name,
 	hasher = grub_crypto_lookup_md_by_name ("sha512");
 	if (!hasher) {
 		grub_printf ("SHC - unable to init hasher\n");
-		grub_file_close (state.fd);
+		close_fd ();
 		return NULL;
 	}
 	hash_ctx = grub_zalloc (hasher->contextsize);
 	if (!hash_ctx) {
 		grub_printf ("SHC - unanle to init hasher ctx\n");
-		grub_file_close (state.fd);
+		close_fd ();
 		return NULL;
 	}
 
