@@ -115,9 +115,6 @@ read_block (void)
 		grub_printf ("SHC - unable to read block hash value\n");
 		return 0;
 	}
-	grub_printf("hash of this block read");
-	print_hash(state.next_hash);
-	grub_printf("\n");
 	if (grub_file_read (state.fd, state.data, bdl) != (grub_ssize_t) bdl)
 	{
 		grub_printf ("SHC - unable to read block data\n");
@@ -131,6 +128,8 @@ hash_valid (const grub_uint8_t * const h)
 {
 	unsigned res = 0;
 
+	hasher->init (hash_ctx);
+
 	// TODO:move to init, also cleanup.
 	// TODO:check all results
 	hasher->write (hash_ctx, state.next_hash, SHA512_HASHSUM_LEN);
@@ -138,14 +137,22 @@ hash_valid (const grub_uint8_t * const h)
 
 	hasher->final(hash_ctx);
 
-	grub_printf("calc hash ");
-	print_hash(hasher->read (hash_ctx));
-	grub_printf("\n");
-
-	if (grub_crypto_memcmp (h, hasher->read (hash_ctx), hasher->mdlen) != 0)
+	if (grub_crypto_memcmp (h, hasher->read (hash_ctx), hasher->mdlen) == 0)
+	{
 		res = 1;
+	}
+	else
+	{
+		grub_printf ("SHC - ERROR invalid hash detected\n");
+		grub_printf ("SHC - computed hash ");
+		print_hash (hasher->read (hash_ctx));
+		grub_printf ("\n");
+		grub_printf ("SHC - stored hash ");
+		print_hash (h);
+		grub_printf ("\n");
+	}
 
-	// TODO explicitly memset?
+	grub_memset (hash_ctx, 0, hasher->contextsize);
 	return res;
 }
 
@@ -157,18 +164,11 @@ load_next_block (const grub_uint32_t offset __attribute__ ((unused)))
 	// TODO check result
 	grub_memcpy (current_hash, state.next_hash, SHA512_HASHSUM_LEN);
 
-	grub_printf("current hash ");
-	print_hash(current_hash);
-	grub_printf("\n");
-
 	if (! read_block())
 		return 0;
 
-	if (! hash_valid (current_hash)) {
-		// TODO print hashes
-		grub_printf ("SHC - ERROR invalid hash detected\n");
+	if (! hash_valid (current_hash))
 		return 0;
-	}
 
 	// TODO: re-init buffers for read.
 	return 1;
