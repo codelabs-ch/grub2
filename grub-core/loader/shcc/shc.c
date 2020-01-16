@@ -50,7 +50,7 @@ struct reader_state_type
 
 static struct reader_state_type state =
 {
-	.fd               = 0,
+	.fd               = NULL,
 	.total_bytes_read = 0,
 	.shc_valid        = 0,
 	.read_pos         = NULL,
@@ -414,14 +414,14 @@ shc_read (grub_file_t file __attribute__ ((unused)),
 
 invalid:
 	grub_printf("SHC - error in block read\n");
-	invalidate();
+	invalidate ();
 	return -1;
 }
 
 static grub_err_t
 shc_close (grub_file_t file __attribute__ ((unused)))
 {
-	invalidate();
+	invalidate ();
 	return GRUB_ERR_NONE;
 }
 
@@ -430,7 +430,7 @@ shc_init (grub_extcmd_context_t ctxt __attribute__ ((unused)),
 		int argc __attribute__ ((unused)),
 		char **argv __attribute__ ((unused)))
 {
-	grub_printf("SHC - Overriding CSL file ops...\n");
+	grub_printf ("SHC - Overriding CSL file ops...\n");
 	csl_fs_ops.open  = shc_open;
 	csl_fs_ops.read  = shc_read;
 	csl_fs_ops.size  = shc_size;
