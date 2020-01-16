@@ -31,13 +31,15 @@ GRUB_MOD_LICENSE ("GPLv3+");
 
 #define SHA512_HASHSUM_LEN 64
 
-static struct shc_header_t header = {
+static struct shc_header_t header =
+{
 	.root_hash = NULL,
 };
 
 static grub_off_t encoded_file_size = 0;
 
-struct reader_state_type {
+struct reader_state_type
+{
 	grub_file_t fd;
 	grub_uint64_t total_bytes_read;
 	unsigned int shc_valid;
@@ -46,7 +48,8 @@ struct reader_state_type {
 	grub_uint8_t *data;
 };
 
-static struct reader_state_type state = {
+static struct reader_state_type state =
+{
 	.fd               = 0,
 	.total_bytes_read = 0,
 	.shc_valid        = 0,
