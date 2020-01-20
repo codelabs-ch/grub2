@@ -22,19 +22,17 @@
 #include <grub/misc.h>
 #include <grub/extcmd.h>
 #include <grub/dl.h>
+#include <grub/file.h>
 #include <grub/crypto.h>
+#include <grub/pubkey.h>
+#include <grub/kernel.h>
 
 #include "csl.h"
 #include "shc.h"
 
 GRUB_MOD_LICENSE ("GPLv3+");
 
-#define SHA512_HASHSUM_LEN 64
-
-static struct shc_header_t header =
-{
-	.root_hash = NULL,
-};
+static struct shc_header_t header;
 
 static grub_off_t encoded_file_size = 0;
 
@@ -54,11 +52,37 @@ static struct reader_state_type state =
 	.total_bytes_read = 0,
 	.shc_valid        = 0,
 	.read_pos         = NULL,
-	.data             = NULL,
+	.data             = NULL
 };
 
 static const gcry_md_spec_t *hasher = NULL;
 static void *hash_ctx = NULL;
+
+/* --- TODO: factor out from pgp.c? --- */
+
+static struct grub_public_key *grub_pk_trusted = NULL;
+
+static grub_ssize_t
+pseudo_read (struct grub_file *file, char *buf, grub_size_t len)
+{
+	grub_memcpy (buf, (grub_uint8_t *) file->data + file->offset, len);
+	return len;
+}
+
+static grub_err_t
+pseudo_close (struct grub_file *file __attribute__ ((unused)))
+{
+	return GRUB_ERR_NONE;
+}
+
+static struct grub_fs pseudo_fs =
+{
+	.name = "pseudo",
+	.fs_read = pseudo_read,
+	.fs_close = pseudo_close
+};
+
+/* --- */
 
 static inline grub_uint32_t
 block_data_len (void)
@@ -102,11 +126,6 @@ invalidate (void)
 		grub_free (state.data);
 		state.data = NULL;
 	}
-	if (header.root_hash)
-	{
-		grub_free (header.root_hash);
-		header.root_hash = NULL;
-	}
 	if (hash_ctx)
 	{
 		grub_free (hash_ctx);
@@ -115,25 +134,59 @@ invalidate (void)
 	close_fd ();
 }
 
+static void
+print_buffer (const grub_uint8_t * const b, const unsigned len)
+{
+	unsigned i;
+	grub_printf ("0x");
+	for (i = 0; i < len; i++)
+		grub_printf ("%02x", b[i]);
+}
+
 /*
  * Verify header signature, returns 1 and sets shc_valid to 1 if verification
  * succeeds, 0 otherwise.
  */
-static unsigned
-verify (void)
+static unsigned verify (void)
 {
-	// TODO check signature
+	grub_file_t fd_hdr = NULL, fd_sig = NULL;
+
+	grub_uint8_t signature[GPG_RSA4096_SIG_LEN];
+
+	if (grub_file_read (state.fd, signature, header.sig_len)
+			!= (grub_ssize_t) header.sig_len)
+	{
+		grub_printf ("SHC - unable to read signature\n");
+		return 0;
+	}
+
+	/* must be heap since grub_file_close calls grub_free on it */
+	fd_hdr = grub_malloc (sizeof (struct grub_file));
+	fd_sig = grub_malloc (sizeof (struct grub_file));
+	if (fd_hdr == NULL || fd_sig == NULL) {
+		grub_printf ("SHC - unable to allocate pseudo fds\n");
+		return 0;
+	}
+
+	grub_memset (fd_hdr, 0, sizeof (*fd_hdr));
+	fd_hdr->fs = &pseudo_fs;
+	fd_hdr->size = header.header_size;
+	fd_hdr->data = (char *) &header;
+
+	grub_memset (fd_sig, 0, sizeof (*fd_sig));
+	fd_sig->fs = &pseudo_fs;
+	fd_sig->size = header.sig_len;
+	fd_sig->data = signature;
+
+	if (grub_verify_signature2 (fd_hdr, fd_sig, grub_pk_trusted)
+			!= GRUB_ERR_NONE)
+	{
+		grub_printf ("SHC - signature verification failed\n");
+		return 0;
+	}
+
 	state.shc_valid = 1;
 	return 1;
-}
-
-static void
-print_hash (const grub_uint8_t * const h)
-{
-	unsigned i;
-	grub_printf ("0x");
-	for (i = 0; i < SHA512_HASHSUM_LEN; i++)
-		grub_printf ("%02x", h[i]);
 }
 
 static unsigned
@@ -173,10 +226,10 @@ hash_valid (const grub_uint8_t * const h)
 
 		grub_printf ("SHC - ERROR invalid hash detected\n");
 		grub_printf ("SHC - computed hash ");
-		print_hash (hasher->read (hash_ctx));
+		print_buffer (hasher->read (hash_ctx), SHA512_HASHSUM_LEN);
 		grub_printf ("\n");
 		grub_printf ("SHC - stored hash ");
-		print_hash (h);
+		print_buffer (h, SHA512_HASHSUM_LEN);
 		grub_printf ("\n");
 	}
 
@@ -272,11 +325,12 @@ read_header (void)
 		goto header_invalid;
 	}
 
-	header.root_hash = grub_malloc (header.hashsum_len);
-	if (! header.root_hash) {
-		grub_printf ("SHC - unable to allocate bytes for root hash\n");
+	if (header.sig_len != GPG_RSA4096_SIG_LEN) {
+		grub_printf ("SHC - unexpected sginature length %u, expected %u\n",
+				header.sig_len, GPG_RSA4096_SIG_LEN);
 		goto header_invalid;
 	}
+
 	if (! read_field (header.root_hash, header.hashsum_len,
 				"unable to read root hash")) {
 		grub_free (header.root_hash);
@@ -333,7 +387,7 @@ shc_open (const char *name,
 	}
 	hash_ctx = grub_zalloc (hasher->contextsize);
 	if (!hash_ctx) {
-		grub_printf ("SHC - unanle to init hasher ctx\n");
+		grub_printf ("SHC - unable to init hasher ctx\n");
 		close_fd ();
 		return NULL;
 	}
@@ -348,7 +402,7 @@ shc_open (const char *name,
 	grub_printf ("SHC - encoded file size : %llu\n", encoded_file_size);
 
 	grub_printf ("SHC - root hash         : ");
-	print_hash(header.root_hash);
+	print_buffer (header.root_hash, SHA512_HASHSUM_LEN);
 	grub_printf ("\n");
 
 	state.data = grub_malloc (bdl);
@@ -452,6 +506,35 @@ static grub_extcmd_t cmd;
 
 GRUB_MOD_INIT(shc)
 {
+	struct grub_module_header *mod_header;
+
+	/* We only look for one key. */
+	// TODO: factor out from pgp.c?
+	FOR_MODULES (mod_header)
+	{
+		struct grub_file pseudo_file;
+		struct grub_public_key *pk = NULL;
+
+		grub_memset (&pseudo_file, 0, sizeof (pseudo_file));
+
+		/* Not a pubkey, skip.  */
+		if (mod_header->type != OBJ_TYPE_PUBKEY)
+			continue;
+
+		pseudo_file.fs = &pseudo_fs;
+		pseudo_file.size = (mod_header->size - sizeof (struct grub_module_header));
+		pseudo_file.data = (char *) mod_header + sizeof (struct grub_module_header);
+
+		pk = grub_load_public_key (&pseudo_file);
+		if (!pk)
+			grub_fatal ("SHC - error loading initial key: %s\n", grub_errmsg);
+
+		grub_pk_trusted = pk;
+		break;
+	}
+	if (! grub_pk_trusted)
+		grub_fatal ("SHC - unable to init trusted pubkey\n");
+
 	cmd = grub_register_extcmd ("shc_init", shc_init, 0, 0,
 			"Initialize Signed Hash Chain (SHC) processing.", 0);
 }

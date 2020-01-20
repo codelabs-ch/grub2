@@ -20,7 +20,9 @@
 #ifndef SHC_H
 #define SHC_H
 
-#define SHC_VERMAGIC 0xe6019598
+#define SHC_VERMAGIC		0xe6019598
+#define SHA512_HASHSUM_LEN	64
+#define GPG_RSA4096_SIG_LEN	566
 
 typedef enum
 {
@@ -43,7 +45,7 @@ struct shc_header_t
 	grub_uint16_t sig_algo_id;
 	grub_uint16_t reserved;
 	grub_uint32_t padding_len;
-	grub_uint8_t *root_hash;
+	grub_uint8_t root_hash[SHA512_HASHSUM_LEN];
 } __attribute__ ((packed));
 
 #endif /* SHC_H */
