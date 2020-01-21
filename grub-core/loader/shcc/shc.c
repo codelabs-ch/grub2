@@ -181,10 +181,11 @@ static unsigned verify (void)
 	if (grub_verify_signature2 (fd_hdr, fd_sig, grub_pk_trusted)
 			!= GRUB_ERR_NONE)
 	{
-		grub_printf ("SHC - signature verification failed\n");
+		grub_printf ("SHC - signature verification failed: %s\n", grub_errmsg);
 		return 0;
 	}
 
+	grub_printf ("SHC - signature valid\n");
 	state.shc_valid = 1;
 	return 1;
 }
@@ -493,7 +494,7 @@ shc_init (grub_extcmd_context_t ctxt __attribute__ ((unused)),
 		int argc __attribute__ ((unused)),
 		char **argv __attribute__ ((unused)))
 {
-	grub_printf ("SHC - Overriding CSL file ops...\n");
+	grub_printf ("SHC - overriding CSL file ops...\n");
 	csl_fs_ops.open  = shc_open;
 	csl_fs_ops.read  = shc_read;
 	csl_fs_ops.size  = shc_size;
