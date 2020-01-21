@@ -1,0 +1,78 @@
+#! @BUILD_SHEBANG@
+# Copyright (C) 2020  Free Software Foundation, Inc.
+#
+# GRUB is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# GRUB is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with GRUB.  If not, see <http://www.gnu.org/licenses/>.
+
+set -e
+grubshell=@builddir@/grub-shell
+
+function check_result {
+	local buffer=$1
+	local string=$2
+	local found=`echo $buffer | grep "$string"`
+	if [ -z "$found" ]; then
+		echo LOCAL FAIL
+		echo "'$string' not found in buffer:"
+		echo "$buffer"
+		exit 1
+	fi
+}
+
+# CSL tests
+
+files="/boot/csl.img=./tests/shcc/csl.img.invalid"
+result="error: '/boot/csl.img' - file size not a multiple of 8 bytes."
+
+out="$("${grubshell}" --files="$files" "./tests/shcc/csl.test.cfg")"
+if [ "$out" != "$result" ]; then
+	echo LOCAL FAIL
+	echo "$out"
+	exit 1
+fi
+
+files="/boot/csl.img=./tests/shcc/csl.img"
+result="CMD_CHECK_CPUID - Check for invariant TSC
+error: CMD_CHECK_CPUID - 'Check for invariant TSC' failed (expected 0x100, got 0x0)."
+
+out="$("${grubshell}" --files="$files" "./tests/shcc/csl.test.cfg")"
+if [ "$out" != "$result" ]; then
+	echo LOCAL FAIL
+	echo "$out"
+	exit 1
+fi
+
+# SHC tests
+
+pub=./tests/shcc/key.pub
+modules="shc normal"
+
+for file in grub.cfg.sig testcase.cfg.sig; do
+    base_files="$base_files /boot/grub/$file=@srcdir@/tests/shcc/$file"
+done
+
+## valid case
+files="$base_files /boot/shc.img=./tests/shcc/shc.img"
+
+out="$("${grubshell}" --mkrescue-arg="--pubkey $pub" --modules="$modules" --files="$files" "./tests/shcc/shc.test.cfg")"
+check_result "$out" "SHC - overriding CSL file ops..."
+check_result "$out" "SHC - signature valid"
+check_result "$out" "CMD_CHECK_CPUID - Check for invariant TSC"
+
+## signature invalid
+files="$base_files /boot/shc.img=./tests/shcc/shc.img.invalid_sig"
+
+out="$("${grubshell}" --mkrescue-arg="--pubkey $pub" --modules="$modules" --files="$files" "./tests/shcc/shc.test.cfg")"
+check_result "$out" "SHC - signature verification failed: bad signature"
+
+exit 0
