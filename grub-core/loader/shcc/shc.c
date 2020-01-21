@@ -34,7 +34,7 @@ GRUB_MOD_LICENSE ("GPLv3+");
 
 static struct shc_header_t header;
 
-static grub_off_t encoded_file_size = 0;
+static grub_uint64_t encoded_file_size = 0;
 
 struct reader_state_type
 {
@@ -400,7 +400,7 @@ shc_open (const char *name,
 	grub_printf ("SHC - block data length : %u\n", bdl);
 
 	encoded_file_size = header.block_count * bdl - header.padding_len;
-	grub_printf ("SHC - encoded file size : %llu\n", encoded_file_size);
+	grub_printf ("SHC - encoded file size : %" PRIuGRUB_UINT64_T "\n", encoded_file_size);
 
 	grub_printf ("SHC - root hash         : ");
 	print_buffer (header.root_hash, SHA512_HASHSUM_LEN);
