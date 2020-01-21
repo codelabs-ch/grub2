@@ -170,7 +170,7 @@ static unsigned verify (void)
 
 	grub_memset (fd_hdr, 0, sizeof (*fd_hdr));
 	fd_hdr->fs = &pseudo_fs;
-	fd_hdr->size = header.header_size;
+	fd_hdr->size = sizeof (struct shc_header_t);
 	fd_hdr->data = (char *) &header;
 
 	grub_memset (fd_sig, 0, sizeof (*fd_sig));
@@ -290,8 +290,16 @@ read_header (void)
 		return 0;
 	if (! read_field (&header.sig_len, 4, "unable to read signature length"))
 		return 0;
+
 	if (! read_field (&header.header_size, 2, "unable to read header size"))
 		return 0;
+	if (header.header_size != sizeof (struct shc_header_t))
+	{
+		grub_printf ("SHC - incorrect header size %u [expected: %u]\n",
+				header.header_size, sizeof (struct shc_header_t));
+		goto header_invalid;
+	}
+
 	if (! read_field (&header.hashsum_len, 2, "unable to read hashsum length"))
 		return 0;
 	if (! read_field (&header.hash_algo_id_1, 2, "unable to read hash ID 1"))
