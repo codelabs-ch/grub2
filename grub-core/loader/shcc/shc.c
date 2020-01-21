@@ -256,10 +256,10 @@ load_next_block (const grub_uint32_t offset)
 
 static unsigned
 read_field (void *field,
-		const grub_ssize_t width,
+		const grub_size_t width,
 		const char * const err_msg)
 {
-	if (grub_file_read (state.fd, field, width) != width)
+	if (grub_file_read (state.fd, field, width) != (grub_ssize_t) width)
 	{
 		grub_printf ("SHC - %s\n", err_msg);
 		goto header_invalid;
