@@ -151,7 +151,7 @@ static unsigned verify (void)
 {
 	grub_file_t fd_hdr = NULL, fd_sig = NULL;
 
-	grub_uint8_t signature[GPG_RSA4096_SIG_LEN];
+	grub_uint8_t signature[PGP_RSA4096_SIG_LEN];
 
 	if (grub_file_read (state.fd, signature, header.sig_len)
 			!= (grub_ssize_t) header.sig_len)
@@ -334,15 +334,15 @@ read_header (void)
 		goto header_invalid;
 	}
 
-	if (header.sig_algo_id != SBS_SIG_ALGO_GPG)
+	if (header.sig_algo_id != SBS_SIG_ALGO_PGP)
 	{
 		grub_printf ("SBS - unsupported signature algorithm with ID %u\n",
 				header.sig_algo_id);
 		goto header_invalid;
 	}
-	if (header.sig_len != GPG_RSA4096_SIG_LEN) {
+	if (header.sig_len != PGP_RSA4096_SIG_LEN) {
 		grub_printf ("SBS - unexpected sginature length %u, expected %u\n",
-				header.sig_len, GPG_RSA4096_SIG_LEN);
+				header.sig_len, PGP_RSA4096_SIG_LEN);
 		goto header_invalid;
 	}
 

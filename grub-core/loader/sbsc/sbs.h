@@ -22,7 +22,7 @@
 
 #define SBS_VERMAGIC		0xe6019598
 #define SHA512_HASHSUM_LEN	64
-#define GPG_RSA4096_SIG_LEN	566
+#define PGP_RSA4096_SIG_LEN	566
 
 enum
 {
@@ -32,7 +32,7 @@ enum
 
 enum
 {
-	SBS_SIG_ALGO_GPG = 1,
+	SBS_SIG_ALGO_PGP = 1,
 };
 
 struct sbs_header_t
