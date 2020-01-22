@@ -1,4 +1,4 @@
-/* shc.c - Signed Hash Chain (SHC) implementation */
+/* sbs.c - Signed Block Stream (SBS) implementation */
 /*
  *  GRUB  --  GRand Unified Bootloader
  *  Copyright (C) 2019  codelabs GmbH
@@ -28,11 +28,11 @@
 #include <grub/kernel.h>
 
 #include "csl.h"
-#include "shc.h"
+#include "sbs.h"
 
 GRUB_MOD_LICENSE ("GPLv3+");
 
-static struct shc_header_t header;
+static struct sbs_header_t header;
 
 static grub_uint64_t encoded_file_size = 0;
 
@@ -40,7 +40,7 @@ struct reader_state_type
 {
 	grub_file_t fd;
 	grub_uint64_t total_bytes_read;
-	unsigned int shc_valid;
+	unsigned int sbs_valid;
 	grub_uint8_t next_hash[SHA512_HASHSUM_LEN];
 	grub_uint8_t *read_pos;
 	grub_uint8_t *data;
@@ -50,7 +50,7 @@ static struct reader_state_type state =
 {
 	.fd               = NULL,
 	.total_bytes_read = 0,
-	.shc_valid        = 0,
+	.sbs_valid        = 0,
 	.read_pos         = NULL,
 	.data             = NULL
 };
@@ -118,7 +118,7 @@ close_fd (void)
 static void
 invalidate (void)
 {
-	state.shc_valid = 0;
+	state.sbs_valid = 0;
 	state.read_pos  = NULL;
 
 	if (state.data)
@@ -144,7 +144,7 @@ print_buffer (const grub_uint8_t * const b, const unsigned len)
 }
 
 /*
- * Verify header signature, returns 1 and sets shc_valid to 1 if verification
+ * Verify header signature, returns 1 and sets sbs_valid to 1 if verification
  * succeeds, 0 otherwise.
  */
 static unsigned verify (void)
@@ -156,7 +156,7 @@ static unsigned verify (void)
 	if (grub_file_read (state.fd, signature, header.sig_len)
 			!= (grub_ssize_t) header.sig_len)
 	{
-		grub_printf ("SHC - unable to read signature\n");
+		grub_printf ("SBS - unable to read signature\n");
 		return 0;
 	}
 
@@ -164,13 +164,13 @@ static unsigned verify (void)
 	fd_hdr = grub_malloc (sizeof (struct grub_file));
 	fd_sig = grub_malloc (sizeof (struct grub_file));
 	if (fd_hdr == NULL || fd_sig == NULL) {
-		grub_printf ("SHC - unable to allocate pseudo fds\n");
+		grub_printf ("SBS - unable to allocate pseudo fds\n");
 		return 0;
 	}
 
 	grub_memset (fd_hdr, 0, sizeof (*fd_hdr));
 	fd_hdr->fs = &pseudo_fs;
-	fd_hdr->size = sizeof (struct shc_header_t);
+	fd_hdr->size = sizeof (struct sbs_header_t);
 	fd_hdr->data = (char *) &header;
 
 	grub_memset (fd_sig, 0, sizeof (*fd_sig));
@@ -181,12 +181,12 @@ static unsigned verify (void)
 	if (grub_verify_signature2 (fd_hdr, fd_sig, grub_pk_trusted)
 			!= GRUB_ERR_NONE)
 	{
-		grub_printf ("SHC - signature verification failed: %s\n", grub_errmsg);
+		grub_printf ("SBS - signature verification failed: %s\n", grub_errmsg);
 		return 0;
 	}
 
-	grub_printf ("SHC - signature valid\n");
-	state.shc_valid = 1;
+	grub_printf ("SBS - signature valid\n");
+	state.sbs_valid = 1;
 	return 1;
 }
 
@@ -196,12 +196,12 @@ read_block (void)
 	if (grub_file_read (state.fd, state.next_hash, header.hashsum_len)
 			!= header.hashsum_len)
 	{
-		grub_printf ("SHC - unable to read block hash value\n");
+		grub_printf ("SBS - unable to read block hash value\n");
 		return 0;
 	}
 	if (grub_file_read (state.fd, state.data, bdl) != (grub_ssize_t) bdl)
 	{
-		grub_printf ("SHC - unable to read block data\n");
+		grub_printf ("SBS - unable to read block data\n");
 		return 0;
 	}
 	return 1;
@@ -225,11 +225,11 @@ hash_valid (const grub_uint8_t * const h)
 	{
 		res = 0;
 
-		grub_printf ("SHC - ERROR invalid hash detected\n");
-		grub_printf ("SHC - computed hash ");
+		grub_printf ("SBS - ERROR invalid hash detected\n");
+		grub_printf ("SBS - computed hash ");
 		print_buffer (hasher->read (hash_ctx), SHA512_HASHSUM_LEN);
 		grub_printf ("\n");
-		grub_printf ("SHC - stored hash ");
+		grub_printf ("SBS - stored hash ");
 		print_buffer (h, SHA512_HASHSUM_LEN);
 		grub_printf ("\n");
 	}
@@ -261,7 +261,7 @@ read_field (void *field,
 {
 	if (grub_file_read (state.fd, field, width) != (grub_ssize_t) width)
 	{
-		grub_printf ("SHC - %s\n", err_msg);
+		grub_printf ("SBS - %s\n", err_msg);
 		goto header_invalid;
 	}
 
@@ -277,10 +277,10 @@ read_header (void)
 {
 	if (! read_field (&header.version_magic, 4, "unable to read version magic"))
 		return 0;
-	if (header.version_magic != SHC_VERMAGIC)
+	if (header.version_magic != SBS_VERMAGIC)
 	{
-		grub_printf ("SHC - version magic mismatch [got: 0x%x, expected: 0x%x]\n",
-				header.version_magic, SHC_VERMAGIC);
+		grub_printf ("SBS - version magic mismatch [got: 0x%x, expected: 0x%x]\n",
+				header.version_magic, SBS_VERMAGIC);
 		goto header_invalid;
 	}
 
@@ -293,10 +293,10 @@ read_header (void)
 
 	if (! read_field (&header.header_size, 2, "unable to read header size"))
 		return 0;
-	if (header.header_size != sizeof (struct shc_header_t))
+	if (header.header_size != sizeof (struct sbs_header_t))
 	{
-		grub_printf ("SHC - incorrect header size %u [expected: %u]\n",
-				header.header_size, sizeof (struct shc_header_t));
+		grub_printf ("SBS - incorrect header size %u [expected: %u]\n",
+				header.header_size, sizeof (struct sbs_header_t));
 		goto header_invalid;
 	}
 
@@ -317,31 +317,31 @@ read_header (void)
 	if (! read_field (&header.padding_len, 4, "unable to read padding length"))
 		return 0;
 
-	if (! (header.hash_algo_id_1 == SHC_HASH_ALGO_SHA2_512
-				&& header.hash_algo_id_2 == SHC_HASH_ALGO_NONE
-				&& header.hash_algo_id_3 == SHC_HASH_ALGO_NONE
-				&& header.hash_algo_id_4 == SHC_HASH_ALGO_NONE))
+	if (! (header.hash_algo_id_1 == SBS_HASH_ALGO_SHA2_512
+				&& header.hash_algo_id_2 == SBS_HASH_ALGO_NONE
+				&& header.hash_algo_id_3 == SBS_HASH_ALGO_NONE
+				&& header.hash_algo_id_4 == SBS_HASH_ALGO_NONE))
 	{
-		grub_printf ("SHC - unsupported hash algorithm config "
+		grub_printf ("SBS - unsupported hash algorithm config "
 				"(1: %u, 2: %u, 3: %u, 4: %u)\n",
 				header.hash_algo_id_1, header.hash_algo_id_2,
 				header.hash_algo_id_3, header.hash_algo_id_4);
 		goto header_invalid;
 	}
 	if (header.hashsum_len != SHA512_HASHSUM_LEN) {
-		grub_printf ("SHC - unexpected hashsum length %u, expected %u\n",
+		grub_printf ("SBS - unexpected hashsum length %u, expected %u\n",
 				header.hashsum_len, SHA512_HASHSUM_LEN);
 		goto header_invalid;
 	}
 
-	if (header.sig_algo_id != SHC_SIG_ALGO_GPG)
+	if (header.sig_algo_id != SBS_SIG_ALGO_GPG)
 	{
-		grub_printf ("SHC - unsupported signature algorithm with ID %u\n",
+		grub_printf ("SBS - unsupported signature algorithm with ID %u\n",
 				header.sig_algo_id);
 		goto header_invalid;
 	}
 	if (header.sig_len != GPG_RSA4096_SIG_LEN) {
-		grub_printf ("SHC - unexpected sginature length %u, expected %u\n",
+		grub_printf ("SBS - unexpected sginature length %u, expected %u\n",
 				header.sig_len, GPG_RSA4096_SIG_LEN);
 		goto header_invalid;
 	}
@@ -371,17 +371,17 @@ copy_buffer (void *ptr, grub_uint32_t len)
 }
 
 static grub_file_t
-shc_open (const char *name,
+sbs_open (const char *name,
 		enum grub_file_type type __attribute__ ((unused)))
 {
-	if (state.shc_valid)
+	if (state.sbs_valid)
 		return NULL;
 
-	state.fd = grub_file_open (name, GRUB_FILE_TYPE_SHC);
+	state.fd = grub_file_open (name, GRUB_FILE_TYPE_SBS);
 
 	if (! state.fd)
 	{
-		grub_printf ("SHC - unable to open '%s'\n", name);
+		grub_printf ("SBS - unable to open '%s'\n", name);
 		return NULL;
 	}
 
@@ -396,33 +396,33 @@ shc_open (const char *name,
 	/* init hasher and associated context */
 	hasher = grub_crypto_lookup_md_by_name ("sha512");
 	if (!hasher) {
-		grub_printf ("SHC - unable to init hasher\n");
+		grub_printf ("SBS - unable to init hasher\n");
 		close_fd ();
 		return NULL;
 	}
 	hash_ctx = grub_zalloc (hasher->contextsize);
 	if (!hash_ctx) {
-		grub_printf ("SHC - unable to init hasher ctx\n");
+		grub_printf ("SBS - unable to init hasher ctx\n");
 		close_fd ();
 		return NULL;
 	}
 
-	grub_printf ("SHC - block count       : %u\n", header.block_count);
-	grub_printf ("SHC - initial padding   : %u\n", header.padding_len);
-	grub_printf ("SHC - block size        : %u\n", header.block_size);
-	grub_printf ("SHC - hashsum length    : %u\n", header.hashsum_len);
-	grub_printf ("SHC - block data length : %u\n", bdl);
+	grub_printf ("SBS - block count       : %u\n", header.block_count);
+	grub_printf ("SBS - initial padding   : %u\n", header.padding_len);
+	grub_printf ("SBS - block size        : %u\n", header.block_size);
+	grub_printf ("SBS - hashsum length    : %u\n", header.hashsum_len);
+	grub_printf ("SBS - block data length : %u\n", bdl);
 
 	encoded_file_size = header.block_count * bdl - header.padding_len;
-	grub_printf ("SHC - encoded file size : %" PRIuGRUB_UINT64_T "\n", encoded_file_size);
+	grub_printf ("SBS - encoded file size : %" PRIuGRUB_UINT64_T "\n", encoded_file_size);
 
-	grub_printf ("SHC - root hash         : ");
+	grub_printf ("SBS - root hash         : ");
 	print_buffer (header.root_hash, SHA512_HASHSUM_LEN);
 	grub_printf ("\n");
 
 	state.data = grub_malloc (bdl);
 	if (state.data == NULL) {
-		grub_printf ("SHC - error allocating data buffer\n");
+		grub_printf ("SBS - error allocating data buffer\n");
 		invalidate ();
 		return NULL;
 	}
@@ -439,16 +439,16 @@ shc_open (const char *name,
 }
 
 static grub_off_t
-shc_size (grub_file_t file __attribute__ ((unused)))
+sbs_size (grub_file_t file __attribute__ ((unused)))
 {
-	if (!state.shc_valid)
+	if (!state.sbs_valid)
 		return 0;
 
 	return encoded_file_size;
 }
 
 static grub_ssize_t
-shc_read (grub_file_t file __attribute__ ((unused)),
+sbs_read (grub_file_t file __attribute__ ((unused)),
 		void *buf __attribute__ ((unused)),
 		grub_size_t len)
 {
@@ -456,10 +456,10 @@ shc_read (grub_file_t file __attribute__ ((unused)),
 	void *ptr = buf;
 	grub_uint32_t copied;
 
-	if (! state.shc_valid)
+	if (! state.sbs_valid)
 		return -1;
 
-	if (state.total_bytes_read >= shc_size (state.fd))
+	if (state.total_bytes_read >= sbs_size (state.fd))
 		return 0;
 
 	if (buffer_empty())
@@ -491,35 +491,35 @@ shc_read (grub_file_t file __attribute__ ((unused)),
 	return len;
 
 invalid:
-	grub_printf("SHC - error in block read\n");
+	grub_printf("SBS - error in block read\n");
 	invalidate ();
 	return -1;
 }
 
 static grub_err_t
-shc_close (grub_file_t file __attribute__ ((unused)))
+sbs_close (grub_file_t file __attribute__ ((unused)))
 {
 	invalidate ();
 	return GRUB_ERR_NONE;
 }
 
 static grub_err_t
-shc_init (grub_extcmd_context_t ctxt __attribute__ ((unused)),
+sbs_init (grub_extcmd_context_t ctxt __attribute__ ((unused)),
 		int argc __attribute__ ((unused)),
 		char **argv __attribute__ ((unused)))
 {
-	grub_printf ("SHC - overriding CSL file ops...\n");
-	csl_fs_ops.open  = shc_open;
-	csl_fs_ops.read  = shc_read;
-	csl_fs_ops.size  = shc_size;
-	csl_fs_ops.close = shc_close;
+	grub_printf ("SBS - overriding CSL file ops...\n");
+	csl_fs_ops.open  = sbs_open;
+	csl_fs_ops.read  = sbs_read;
+	csl_fs_ops.size  = sbs_size;
+	csl_fs_ops.close = sbs_close;
 
 	return GRUB_ERR_NONE;
 }
 
 static grub_extcmd_t cmd;
 
-GRUB_MOD_INIT(shc)
+GRUB_MOD_INIT(sbs)
 {
 	struct grub_module_header *mod_header;
 
@@ -542,19 +542,19 @@ GRUB_MOD_INIT(shc)
 
 		pk = grub_load_public_key (&pseudo_file);
 		if (!pk)
-			grub_fatal ("SHC - error loading initial key: %s\n", grub_errmsg);
+			grub_fatal ("SBS - error loading initial key: %s\n", grub_errmsg);
 
 		grub_pk_trusted = pk;
 		break;
 	}
 	if (! grub_pk_trusted)
-		grub_fatal ("SHC - unable to init trusted pubkey\n");
+		grub_fatal ("SBS - unable to init trusted pubkey\n");
 
-	cmd = grub_register_extcmd ("shc_init", shc_init, 0, 0,
-			"Initialize Signed Hash Chain (SHC) processing.", 0);
+	cmd = grub_register_extcmd ("sbs_init", sbs_init, 0, 0,
+			"Initialize Signed Block Stream (SBS) processing.", 0);
 }
 
-GRUB_MOD_FINI(shc)
+GRUB_MOD_FINI(sbs)
 {
 	invalidate();
 	grub_unregister_extcmd (cmd);

@@ -384,7 +384,7 @@ if [ x$boot != xnet ] && [ x$boot != xemu ]; then
 	--locale-directory="@srcdir@/po" \
 	--themes-directory="@srcdir@/themes" \
 	$mkimage_extra_arg ${mkrescue_args} \
-	--modules="gcry_rsa gcry_sha512 configfile csl pgp shc halt serial normal" \
+	--modules="gcry_rsa gcry_sha512 configfile csl pgp sbs halt serial normal" \
 	"/boot/grub/grub.cfg=${cfgfile}" "/boot/grub/testcase.cfg=${source}" \
 	${files} >/dev/null 2>&1
 fi

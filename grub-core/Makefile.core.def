@@ -2526,7 +2526,7 @@ module = {
 };
 
 module = {
-  name = shc;
-  common = loader/shcc/shc.c;
+  name = sbs;
+  common = loader/sbsc/sbs.c;
   enable = x86;
 };

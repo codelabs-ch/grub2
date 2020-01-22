@@ -1,4 +1,4 @@
-/* shc.h - Signed Hash Chain (SHC) header */
+/* sbs.h - Signed Block Stream (SBS) header */
 /*
  *  GRUB  --  GRand Unified Bootloader
  *  Copyright (C) 2019  codelabs GmbH
@@ -17,25 +17,25 @@
  *  along with GRUB.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef SHC_H
-#define SHC_H
+#ifndef SBS_H
+#define SBS_H
 
-#define SHC_VERMAGIC		0xe6019598
+#define SBS_VERMAGIC		0xe6019598
 #define SHA512_HASHSUM_LEN	64
 #define GPG_RSA4096_SIG_LEN	566
 
 enum
 {
-	SHC_HASH_ALGO_NONE     = 0,
-	SHC_HASH_ALGO_SHA2_512 = 1,
+	SBS_HASH_ALGO_NONE     = 0,
+	SBS_HASH_ALGO_SHA2_512 = 1,
 };
 
 enum
 {
-	SHC_SIG_ALGO_GPG = 1,
+	SBS_SIG_ALGO_GPG = 1,
 };
 
-struct shc_header_t
+struct sbs_header_t
 {
 	grub_uint32_t version_magic;
 	grub_uint32_t block_count;
@@ -53,4 +53,4 @@ struct shc_header_t
 	grub_uint8_t root_hash[SHA512_HASHSUM_LEN];
 } __attribute__ ((packed));
 
-#endif /* SHC_H */
+#endif /* SBS_H */

@@ -128,7 +128,7 @@ enum grub_file_type
 
     GRUB_FILE_TYPE_VERIFY_SIGNATURE,
 
-    GRUB_FILE_TYPE_SHC,
+    GRUB_FILE_TYPE_SBS,
 
     GRUB_FILE_TYPE_MASK = 0xffff,
 
