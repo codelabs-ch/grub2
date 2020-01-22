@@ -334,6 +334,12 @@ read_header (void)
 		goto header_invalid;
 	}
 
+	if (header.sig_algo_id != SHC_SIG_ALGO_GPG)
+	{
+		grub_printf ("SHC - unsupported signature algorithm with ID %u\n",
+				header.sig_algo_id);
+		goto header_invalid;
+	}
 	if (header.sig_len != GPG_RSA4096_SIG_LEN) {
 		grub_printf ("SHC - unexpected sginature length %u, expected %u\n",
 				header.sig_len, GPG_RSA4096_SIG_LEN);

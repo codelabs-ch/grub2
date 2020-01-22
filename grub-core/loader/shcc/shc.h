@@ -24,11 +24,16 @@
 #define SHA512_HASHSUM_LEN	64
 #define GPG_RSA4096_SIG_LEN	566
 
-typedef enum
+enum
 {
 	SHC_HASH_ALGO_NONE     = 0,
 	SHC_HASH_ALGO_SHA2_512 = 1,
-} shc_hash_algo_t;
+};
+
+enum
+{
+	SHC_SIG_ALGO_GPG = 1,
+};
 
 struct shc_header_t
 {
