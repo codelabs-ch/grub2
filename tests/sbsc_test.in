@@ -1,4 +1,4 @@
-#! @BUILD_SHEBANG@
+#! /bin/bash
 # Copyright (C) 2020  Free Software Foundation, Inc.
 #
 # GRUB is free software: you can redistribute it and/or modify
@@ -15,7 +15,8 @@
 # along with GRUB.  If not, see <http://www.gnu.org/licenses/>.
 
 set -e
-grubshell=@builddir@/grub-shell
+
+grubshell=./grub-shell
 
 function check_result {
 	local buffer=$1
@@ -56,15 +57,16 @@ fi
 
 pub=./tests/sbsc/key.pub
 modules="sbs normal"
+mkimg_mods="$modules gcry_rsa gcry_sha512 configfile csl pgp halt serial"
 
 for file in grub.cfg.sig testcase.cfg.sig; do
-    base_files="$base_files /boot/grub/$file=@srcdir@/tests/sbsc/$file"
+    base_files="$base_files /boot/grub/$file=./tests/sbsc/$file"
 done
 
 ## valid case
 files="$base_files /boot/sbs.img=./tests/sbsc/sbs.img"
 
-out="$("${grubshell}" --mkrescue-arg="--pubkey $pub" --modules="$modules" --files="$files" "./tests/sbsc/sbs.test.cfg")"
+out="$("${grubshell}" --mkrescue-arg="--pubkey=$pub" --mkrescue-arg="--modules=$mkimg_mods" --modules="$modules" --files="$files" "./tests/sbsc/sbs.test.cfg")"
 check_result "$out" "SBS - overriding CSL file ops..."
 check_result "$out" "SBS - signature valid"
 check_result "$out" "CMD_CHECK_CPUID - Check for invariant TSC"
@@ -72,13 +74,13 @@ check_result "$out" "CMD_CHECK_CPUID - Check for invariant TSC"
 ## signature invalid
 files="$base_files /boot/sbs.img=./tests/sbsc/sbs.img.invalid_sig"
 
-out="$("${grubshell}" --mkrescue-arg="--pubkey $pub" --modules="$modules" --files="$files" "./tests/sbsc/sbs.test.cfg")"
+out="$("${grubshell}" --mkrescue-arg="--pubkey=$pub" --mkrescue-arg="--modules=$mkimg_mods" --modules="$modules" --files="$files" "./tests/sbsc/sbs.test.cfg")"
 check_result "$out" "SBS - signature verification failed: bad signature"
 
 ## root hash invalid
 files="$base_files /boot/sbs.img=./tests/sbsc/sbs.img.invalid_root"
 
-out="$("${grubshell}" --mkrescue-arg="--pubkey $pub" --modules="$modules" --files="$files" "./tests/sbsc/sbs.test.cfg")"
+out="$("${grubshell}" --mkrescue-arg="--pubkey=$pub" --mkrescue-arg="--modules=$mkimg_mods" --modules="$modules" --files="$files" "./tests/sbsc/sbs.test.cfg")"
 check_result "$out" "SBS - ERROR invalid hash detected"
 
 exit 0
