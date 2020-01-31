@@ -36,16 +36,14 @@
 GRUB_MOD_LICENSE ("GPLv3+");
 
 /* Protocol version magic */
-static const grub_uint64_t my_vermagic = 0x9ec6f414d638d232ULL;
+static const grub_uint64_t my_vermagic = 0x8adc5fa2448cb65eULL;
 
 enum
 {
-	CMD_CHECK_VERSION = 0,
-	CMD_META_DATA = 1,
-	CMD_WRITE = 2,
-	CMD_FILL = 3,
-	CMD_SET_ENTRY_POINT = 4,
-	CMD_CHECK_CPUID = 5,
+	CMD_WRITE = 0,
+	CMD_FILL = 1,
+	CMD_SET_ENTRY_POINT = 2,
+	CMD_CHECK_CPUID = 3,
 };
 
 enum
@@ -56,10 +54,12 @@ enum
 	CPUID_RESULT_EDX = 3,
 };
 
-#define CMD_CHECK_VERSION_DATA_LEN		8
 #define CMD_SET_ENTRY_POINT_DATA_LEN	8
 #define CMD_FILL_PATTERN_DATA_LEN		24
 #define CMD_CHECK_CPUID_DATA_LEN		88
+
+#define VENDOR_CMD_ID_START	60000
+#define VENDOR_CMD_ID_END	65535
 
 #define MAX_CHECK_STRING 64
 
@@ -78,8 +78,6 @@ enum
 static struct grub_relocator *relocator = NULL;
 
 static const char *cmd_names[] = {
-	"CMD_CHECK_VERSION",
-	"CMD_META_DATA",
 	"CMD_WRITE",
 	"CMD_FILL",
 	"CMD_SET_ENTRY_POINT",
@@ -124,34 +122,6 @@ csl_read_address (const char * const cmd_name,
 }
 
 static grub_err_t
-csl_cmd_check_version (const grub_file_t file,
-		const grub_size_t data_length)
-{
-	grub_uint64_t vermagic = 0;
-	grub_err_t err;
-
-	err = csl_eval_data_len (cmd_names[CMD_CHECK_VERSION],
-			data_length == CMD_CHECK_VERSION_DATA_LEN,
-			data_length);
-	if (err != GRUB_ERR_NONE)
-		return err;
-
-	if (csl_fs_ops.read (file, &vermagic, CMD_CHECK_VERSION_DATA_LEN)
-			!= CMD_CHECK_VERSION_DATA_LEN)
-		return grub_error (GRUB_ERR_FILE_READ_ERROR,
-				"%s - unable to read version magic",
-				cmd_names[CMD_CHECK_VERSION]);
-	if (vermagic != my_vermagic)
-		return grub_error (GRUB_ERR_BAD_ARGUMENT,
-				"%s - version magic mismatch [got: 0x%" PRIxGRUB_UINT64_T
-				", expected: 0x%" PRIxGRUB_UINT64_T "]",
-				cmd_names[CMD_CHECK_VERSION],
-				vermagic, my_vermagic);
-
-	return GRUB_ERR_NONE;
-}
-
-static grub_err_t
 csl_cmd_write (const grub_file_t file,
 		const grub_size_t data_length)
 {
@@ -161,7 +131,7 @@ csl_cmd_write (const grub_file_t file,
 	grub_size_t content_len;
 
 	err = csl_eval_data_len (cmd_names[CMD_WRITE],
-			data_length % 8 == 0 && data_length >= 16,
+			data_length >= 9,
 			data_length);
 	if (err != GRUB_ERR_NONE)
 		return err;
@@ -271,14 +241,11 @@ csl_cmd_check_cpuid (const grub_file_t file,
 	grub_uint32_t leaf = 0, mask = 0, value = 0;
 	grub_uint32_t eax, ebx, ecx = 0, edx, result;
 	grub_uint8_t result_register;
-	char msg[MAX_CHECK_STRING + 1];
+	char msg[MAX_CHECK_STRING];
 
 	if (grub_cpu_is_cpuid_supported () == 0)
 		return grub_error (GRUB_ERR_BAD_ARGUMENT,
 				"CPUID instruction not supported");
-
-	/* required by protocol, but to be sure */
-	msg[MAX_CHECK_STRING] = '\0';
 
 	err = csl_eval_data_len (cmd_names[CMD_CHECK_CPUID],
 			data_length == CMD_CHECK_CPUID_DATA_LEN,
@@ -313,6 +280,8 @@ csl_cmd_check_cpuid (const grub_file_t file,
 		return grub_error (GRUB_ERR_FILE_READ_ERROR,
 				"%s - unable to read message",
 				cmd_names[CMD_CHECK_CPUID]);
+	/* enforce null-termination */
+	msg[MAX_CHECK_STRING - 1] = '\0';
 
 	grub_printf ("%s - %s\n", cmd_names[CMD_CHECK_CPUID], msg);
 	grub_cpuid (leaf, eax, ebx, ecx, edx);
@@ -352,6 +321,9 @@ csl_dispatch (const grub_file_t file,
 		const grub_uint16_t cmd,
 		const grub_uint64_t length)
 {
+	unsigned int i;
+	grub_uint8_t dummy;
+
 	grub_dprintf ("csl", "Dispatching cmd %u, data length 0x%"
 			PRIxGRUB_UINT64_T "\n", cmd, length);
 
@@ -366,8 +338,6 @@ csl_dispatch (const grub_file_t file,
 
 	switch (cmd)
 	{
-		case CMD_CHECK_VERSION:
-			return csl_cmd_check_version (file, (grub_size_t) length);
 		case CMD_WRITE:
 			return csl_cmd_write (file, (grub_size_t) length);
 		case CMD_FILL:
@@ -376,8 +346,13 @@ csl_dispatch (const grub_file_t file,
 			return csl_cmd_set_entry_point (file, (grub_size_t) length);
 		case CMD_CHECK_CPUID:
 			return csl_cmd_check_cpuid (file, (grub_size_t) length);
-		case CMD_META_DATA:
-			/* We do not care about stream meta data */
+		case VENDOR_CMD_ID_START ... VENDOR_CMD_ID_END:
+			/* avoid fseek. otherwise SBS module must implement it. */
+			for (i = 0; i < length; i++)
+				if (csl_fs_ops.read (file, &dummy, 1) != 1)
+					return grub_error (GRUB_ERR_FILE_READ_ERROR,
+							"unable to discard vendor command payload");
+
 			return GRUB_ERR_NONE;
 		default:
 			return grub_error (GRUB_ERR_FILE_READ_ERROR, "unknown command ID %u",
@@ -421,7 +396,7 @@ csl_cmd (grub_extcmd_context_t ctxt __attribute__ ((unused)),
 		char **argv)
 {
 	grub_file_t file = 0;
-	grub_uint64_t cmd, length;
+	grub_uint64_t cmd, length, magic;
 	grub_err_t err;
 
 	grub_loader_unset ();
@@ -436,11 +411,18 @@ csl_cmd (grub_extcmd_context_t ctxt __attribute__ ((unused)),
 	file = csl_fs_ops.open (argv[0], GRUB_FILE_TYPE_NONE);
 	if (! file)
 		return grub_errno;
-	if (csl_fs_ops.size (file) % 8 != 0)
+
+	if (csl_fs_ops.read (file, &magic, 8) != 8)
 	{
 		csl_fs_ops.close (file);
 		return grub_error (GRUB_ERR_FILE_READ_ERROR,
-				"'%s' - file size not a multiple of 8 bytes", argv[0]);
+				"'%s' - unable to read file magic", argv[0]);
+	}
+	if (magic != my_vermagic)
+	{
+		csl_fs_ops.close (file);
+		return grub_error (GRUB_ERR_BAD_ARGUMENT,
+				"'%s' - not a CSL file", argv[0]);
 	}
 
 	while (csl_fs_ops.read (file, &cmd, 8) == 8)
