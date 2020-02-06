@@ -1195,8 +1195,8 @@ script = {
 
 script = {
   testcase;
-  name = sbsc_test;
-  common = tests/sbsc_test.in;
+  name = bsbsc_test;
+  common = tests/bsbsc_test.in;
 };
 
 program = {

@@ -32,21 +32,21 @@ function check_result {
 
 # CSL tests
 
-files="/boot/csl.img=./tests/sbsc/csl.img.invalid"
+files="/boot/csl.img=./tests/bsbsc/csl.img.invalid"
 result="error: '/boot/csl.img' - not a CSL file."
 
-out="$("${grubshell}" --files="$files" "./tests/sbsc/csl.test.cfg")"
+out="$("${grubshell}" --files="$files" "./tests/bsbsc/csl.test.cfg")"
 if [ "$out" != "$result" ]; then
 	echo LOCAL FAIL
 	echo "$out"
 	exit 1
 fi
 
-files="/boot/csl.img=./tests/sbsc/csl.img"
+files="/boot/csl.img=./tests/bsbsc/csl.img"
 result="CMD_CHECK_CPUID - Check for invariant TSC
 error: CMD_CHECK_CPUID - 'Check for invariant TSC' failed (expected 0x100, got 0x0)."
 
-out="$("${grubshell}" --files="$files" "./tests/sbsc/csl.test.cfg")"
+out="$("${grubshell}" --files="$files" "./tests/bsbsc/csl.test.cfg")"
 if [ "$out" != "$result" ]; then
 	echo LOCAL FAIL
 	echo "$out"
@@ -55,32 +55,32 @@ fi
 
 # SBS tests
 
-pub=./tests/sbsc/key.pub
+pub=./tests/bsbsc/key.pub
 modules="sbs normal"
 mkimg_mods="$modules gcry_rsa gcry_sha512 configfile csl pgp halt serial"
 
 for file in grub.cfg.sig testcase.cfg.sig; do
-    base_files="$base_files /boot/grub/$file=./tests/sbsc/$file"
+    base_files="$base_files /boot/grub/$file=./tests/bsbsc/$file"
 done
 
 ## valid case
-files="$base_files /boot/sbs.img=./tests/sbsc/sbs.img"
+files="$base_files /boot/sbs.img=./tests/bsbsc/sbs.img"
 
-out="$("${grubshell}" --mkrescue-arg="--pubkey=$pub" --mkrescue-arg="--modules=$mkimg_mods" --modules="$modules" --files="$files" "./tests/sbsc/sbs.test.cfg")"
+out="$("${grubshell}" --mkrescue-arg="--pubkey=$pub" --mkrescue-arg="--modules=$mkimg_mods" --modules="$modules" --files="$files" "./tests/bsbsc/sbs.test.cfg")"
 check_result "$out" "SBS - overriding CSL file ops..."
 check_result "$out" "SBS - signature valid"
 check_result "$out" "CMD_CHECK_CPUID - Check for invariant TSC"
 
 ## signature invalid
-files="$base_files /boot/sbs.img=./tests/sbsc/sbs.img.invalid_sig"
+files="$base_files /boot/sbs.img=./tests/bsbsc/sbs.img.invalid_sig"
 
-out="$("${grubshell}" --mkrescue-arg="--pubkey=$pub" --mkrescue-arg="--modules=$mkimg_mods" --modules="$modules" --files="$files" "./tests/sbsc/sbs.test.cfg")"
+out="$("${grubshell}" --mkrescue-arg="--pubkey=$pub" --mkrescue-arg="--modules=$mkimg_mods" --modules="$modules" --files="$files" "./tests/bsbsc/sbs.test.cfg")"
 check_result "$out" "SBS - signature verification failed: bad signature"
 
 ## root hash invalid
-files="$base_files /boot/sbs.img=./tests/sbsc/sbs.img.invalid_root"
+files="$base_files /boot/sbs.img=./tests/bsbsc/sbs.img.invalid_root"
 
-out="$("${grubshell}" --mkrescue-arg="--pubkey=$pub" --mkrescue-arg="--modules=$mkimg_mods" --modules="$modules" --files="$files" "./tests/sbsc/sbs.test.cfg")"
+out="$("${grubshell}" --mkrescue-arg="--pubkey=$pub" --mkrescue-arg="--modules=$mkimg_mods" --modules="$modules" --files="$files" "./tests/bsbsc/sbs.test.cfg")"
 check_result "$out" "SBS - ERROR invalid hash detected"
 
 exit 0
