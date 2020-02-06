@@ -33,7 +33,7 @@ function check_result {
 # CSL tests
 
 files="/boot/csl.img=./tests/sbsc/csl.img.invalid"
-result="error: '/boot/csl.img' - file size not a multiple of 8 bytes."
+result="error: '/boot/csl.img' - not a CSL file."
 
 out="$("${grubshell}" --files="$files" "./tests/sbsc/csl.test.cfg")"
 if [ "$out" != "$result" ]; then

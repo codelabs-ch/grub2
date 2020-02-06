@@ -2527,6 +2527,6 @@ module = {
 
 module = {
   name = sbs;
-  common = loader/sbsc/sbs.c;
+  common = loader/bsbsc/sbs.c;
   enable = x86;
 };
