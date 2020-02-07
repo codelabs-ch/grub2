@@ -1,7 +1,7 @@
 /* csl.c - Command Stream Loader (CSL) implementation */
 /*
  *  GRUB  --  GRand Unified Bootloader
- *  Copyright (C) 2019  codelabs GmbH
+ *  Copyright (C) 2020  codelabs GmbH
  *
  *  GRUB is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
