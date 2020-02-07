@@ -35,7 +35,7 @@
 
 GRUB_MOD_LICENSE ("GPLv3+");
 
-/* Protocol version magic */
+/* protocol version magic */
 static const grub_uint64_t my_vermagic = 0x8adc5fa2448cb65eULL;
 
 enum
