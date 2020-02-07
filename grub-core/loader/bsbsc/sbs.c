@@ -295,7 +295,8 @@ read_header (void)
 		return 0;
 	if (header.header_size != sizeof (struct sbs_header_t))
 	{
-		grub_printf ("SBS - incorrect header size %u [expected: %u]\n",
+		grub_printf ("SBS - incorrect header size %u [expected: %"
+				PRIuGRUB_SIZE "]\n",
 				header.header_size, sizeof (struct sbs_header_t));
 		goto header_invalid;
 	}
