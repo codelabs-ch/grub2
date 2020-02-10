@@ -83,4 +83,10 @@ files="$base_files /boot/sbs.img=./tests/bsbsc/sbs.img.invalid_root"
 out="$("${grubshell}" --mkrescue-arg="--pubkey=$pub" --mkrescue-arg="--modules=$mkimg_mods" --modules="$modules" --files="$files" "./tests/bsbsc/sbs.test.cfg")"
 check_result "$out" "SBS - ERROR invalid hash detected"
 
+## too short CSL in SBS
+files="$base_files /boot/sbs.img=./tests/bsbsc/sbs.img.invalid_short"
+
+out="$("${grubshell}" --mkrescue-arg="--pubkey=$pub" --mkrescue-arg="--modules=$mkimg_mods" --modules="$modules" --files="$files" "./tests/bsbsc/sbs.test.cfg")"
+check_result "$out" "CMD_CHECK_CPUID - unable to read message"
+
 exit 0

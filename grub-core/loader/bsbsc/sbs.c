@@ -460,7 +460,7 @@ sbs_read (grub_file_t file __attribute__ ((unused)),
 	if (! state.sbs_valid)
 		return -1;
 
-	if (state.total_bytes_read >= sbs_size (state.fd))
+	if (state.total_bytes_read + len > sbs_size (state.fd))
 		return 0;
 
 	if (buffer_empty())
