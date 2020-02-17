@@ -2601,3 +2601,9 @@ module = {
   common = loader/bsbsc/csl.c;
   enable = x86;
 };
+
+module = {
+  name = sbs;
+  common = loader/bsbsc/sbs.c;
+  enable = x86;
+};
