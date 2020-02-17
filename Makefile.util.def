@@ -1193,6 +1193,12 @@ script = {
   common = tests/syslinux_test.in;
 };
 
+script = {
+  testcase;
+  name = bsbsc_test;
+  common = tests/bsbsc_test.in;
+};
+
 program = {
   testcase;
   name = example_unit_test;
