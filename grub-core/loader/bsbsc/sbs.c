@@ -485,7 +485,7 @@ sbs_size (grub_file_t file __attribute__ ((unused)))
 /* Read len bytes from SBS file */
 static grub_ssize_t
 sbs_read (grub_file_t file __attribute__ ((unused)),
-		void *buf __attribute__ ((unused)),
+		void *buf,
 		grub_size_t len)
 {
 	grub_size_t to_read = len;
