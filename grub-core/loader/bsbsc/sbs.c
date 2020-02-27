@@ -371,10 +371,7 @@ read_header (void)
 
 	if (! read_field (header.root_hash, header.hashsum_len,
 				"unable to read root hash"))
-	{
-		grub_free (header.root_hash);
 		goto header_invalid;
-	}
 
 	return 1;
 
