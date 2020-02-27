@@ -280,14 +280,11 @@ read_field (void *field,
 	if (grub_file_read (state.fd, field, width) != (grub_ssize_t) width)
 	{
 		grub_printf ("SBS - %s\n", err_msg);
-		goto header_invalid;
+		close_fd ();
+		return 0;
 	}
 
 	return 1;
-
-header_invalid:
-	close_fd ();
-	return 0;
 }
 
 /* Read SBS header */
