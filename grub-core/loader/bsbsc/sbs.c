@@ -435,6 +435,7 @@ sbs_open (const char *name,
 	grub_printf ("SBS - block count       : %u\n", header.block_count);
 	grub_printf ("SBS - initial padding   : %u\n", header.padding_len);
 	grub_printf ("SBS - block size        : %u\n", header.block_size);
+	grub_printf ("SBS - signature length  : %u\n", header.sig_len);
 	grub_printf ("SBS - hashsum length    : %u\n", header.hashsum_len);
 	grub_printf ("SBS - block data length : %u\n", bdl ());
 
