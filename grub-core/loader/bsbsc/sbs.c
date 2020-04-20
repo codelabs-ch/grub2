@@ -377,18 +377,6 @@ header_invalid:
 	return 0;
 }
 
-/* Copy len bytes from read buffer to given destination */
-static grub_uint32_t
-copy_buffer (void *dest, grub_uint32_t len)
-{
-	if (buffer_bytes () < len)
-		return 0;
-
-	grub_memcpy (dest, state.read_pos, len);
-	state.read_pos += len;
-	return len;
-}
-
 /* Open SBS file with given name */
 static grub_file_t
 sbs_open (const char *name,
@@ -485,33 +473,31 @@ sbs_read (grub_file_t file __attribute__ ((unused)),
 {
 	grub_size_t to_read = len;
 	void *ptr = buf;
-	grub_uint32_t copied;
 
 	if (! state.sbs_valid)
 		return -1;
 
-	if (! state.bytes_remaining)
-		return 0;
+	if (to_read > state.bytes_remaining)
+		to_read = state.bytes_remaining;
 
-	if (buffer_empty ())
-		if (! load_next_block (0))
-			goto invalid;
-
-	while (to_read && state.bytes_remaining) {
-		const grub_uint32_t to_copy = to_read > buffer_bytes ()
-			? buffer_bytes () : to_read;
-		copied = copy_buffer (ptr, to_copy);
-		if (copied != to_copy)
-			goto invalid;
-		ptr = (grub_uint8_t *) ptr + copied;
-		to_read -= copied;
-		state.bytes_remaining -= copied;
-		if (to_read)
+	while (to_read)
+	{
+		if (buffer_empty ())
 			if (! load_next_block (0))
 				goto invalid;
+
+		const grub_uint32_t to_copy = to_read > buffer_bytes ()
+			? buffer_bytes () : to_read;
+		grub_memcpy (ptr, state.read_pos, to_copy);
+
+		state.bytes_remaining -= to_copy;
+		state.read_pos        += to_copy;
+		to_read               -= to_copy;
+
+		ptr = (grub_uint8_t *) ptr + to_copy;
 	}
 
-	return len - to_read;
+	return (grub_uint8_t *) ptr - (grub_uint8_t *) buf;
 
 invalid:
 	grub_printf("SBS - error in block read\n");
