@@ -29,6 +29,8 @@
 
 #ifdef GRUB_MACHINE_EFI
 #include <grub/efi/efi.h>
+#else
+#include "pae.h"
 #endif
 
 #include "csl.h"
@@ -75,6 +77,9 @@ enum
 	.eip = 0, \
 }
 
+/* Top 32-bit address. */
+#define TOP32_ADDR 0xffffffff
+
 static struct grub_relocator *relocator = NULL;
 
 static const char *cmd_names[] = {
@@ -113,11 +118,60 @@ csl_read_address (const char * const cmd_name,
 	if (csl_fs_ops.read (file, address, 8) != 8)
 		return grub_error (GRUB_ERR_FILE_READ_ERROR,
 				"%s - unable to read address", cmd_name);
-	if (*address > GRUB_ULONG_MAX)
-		return grub_error (GRUB_ERR_OUT_OF_RANGE,
-				"%s - address out of range 0x%" PRIxGRUB_UINT64_T,
-				cmd_name, *address);
 
+	return GRUB_ERR_NONE;
+}
+
+/*
+ * Get target address/chunk for data transfer.
+ *
+ * This function returns the address to use for the data transfer to the
+ * physical address 'addr'. For an address below 4 GiB, it allocates a
+ * relocator chunk with given len.
+ *
+ * - if addr <= TOP32_ADDR
+ *     target = virtual of allocated chunk 'ch'
+ *     (i386-pc and x86_64-efi)
+ * - if addr > TOP32_ADDR
+ *     i386-pc    : error, requires PAE
+ *     x86_64-efi : target = addr
+ */
+static grub_err_t
+csl_get_tgt_addr_chunk (const grub_uint64_t addr, grub_addr_t * const target,
+		grub_relocator_chunk_t * const ch, const grub_size_t len)
+{
+	grub_err_t err;
+
+	if (!target || !ch)
+		return grub_error (GRUB_ERR_BUG, "%s: target or chunk null", __func__);
+
+	if (addr > TOP32_ADDR)
+	{
+#ifndef GRUB_MACHINE_EFI
+		return grub_error (GRUB_ERR_BUG, "%s: Address 0x%" PRIxGRUB_UINT64_T
+				" requires PAE on i386", __func__, addr);
+#endif
+
+		/*
+		 * On UEFI, the complete memory space defined in the UEFI memory map is
+		 * identity mapped (see UEFI specification section 2.3.4). Also, the
+		 * assumption is that GRUB does not allocate objects in memory above
+		 * 4 GiB, therefore directly write to this address without relocator.
+		 */
+		*target = addr;
+	}
+	else
+	{
+		/*
+		 * Destinations below 4 GiB on both i386-pc and x86_64-efi might
+		 * collide with allocated objects, therefore use relocator.
+		 */
+		err = grub_relocator_alloc_chunk_addr (relocator, ch, (grub_addr_t) addr, len);
+		if (err != GRUB_ERR_NONE)
+			return err;
+
+		*target = (grub_addr_t) get_virtual_current_address (*ch);
+	}
 	return GRUB_ERR_NONE;
 }
 
@@ -145,14 +199,39 @@ csl_cmd_write (const grub_file_t file,
 	grub_dprintf ("csl", "%s - address 0x%" PRIxGRUB_UINT64_T
 			", content length 0x%" PRIxGRUB_SIZE "\n",
 			cmd_names[CMD_WRITE], address, content_len);
-	err = grub_relocator_alloc_chunk_addr (relocator, &ch,
-			(grub_addr_t) address,
-			content_len);
+
+#ifndef GRUB_MACHINE_EFI
+	grub_int64_t pae_read;
+	const bool pae_required = address + content_len > GRUB_ULONG_MAX;
+	if (pae_required)
+	{
+		/* PAE for addresses above 4 GiB on i386-pc */
+		pae_read = read_pae (file, address, content_len, csl_fs_ops.read);
+		if (pae_read < 0 || pae_read != (grub_int64_t) content_len)
+			return grub_error (GRUB_ERR_FILE_READ_ERROR,
+					"%s - unable to read 0x%" PRIxGRUB_SIZE " content bytes",
+					cmd_names[CMD_WRITE], content_len);
+		return GRUB_ERR_NONE;
+	}
+
+	/* i386-pc non-PAE */
+
+	/*
+	 * Default csl_fs_ops.read is set to grub_file read, which can only read
+	 * grub_ssize_t bytes, be conservative here and assume the whole data is
+	 * read via grub_file_read.
+	 */
+	if ((grub_ssize_t) content_len < 0)
+		return grub_error (GRUB_ERR_OUT_OF_RANGE,
+				"data length out of range - 0x%" PRIxGRUB_SIZE, content_len);
+#endif
+
+	grub_addr_t target = 0;
+	err = csl_get_tgt_addr_chunk (address, &target, &ch, content_len);
 	if (err != GRUB_ERR_NONE)
 		return err;
 
-	if (csl_fs_ops.read (file, get_virtual_current_address (ch),
-				content_len) != (grub_ssize_t) content_len)
+	if (csl_fs_ops.read (file, (void *) target, content_len) != (grub_ssize_t) content_len)
 		return grub_error (GRUB_ERR_FILE_READ_ERROR,
 				"%s - unable to read 0x%" PRIxGRUB_SIZE " content data bytes",
 				cmd_names[CMD_WRITE], content_len);
@@ -174,7 +253,7 @@ csl_cmd_fill (const grub_file_t file,
 	if (err != GRUB_ERR_NONE)
 		return err;
 
-	err = csl_read_address(cmd_names[CMD_FILL], file, &address);
+	err = csl_read_address (cmd_names[CMD_FILL], file, &address);
 	if (err != GRUB_ERR_NONE)
 		return err;
 	if (csl_fs_ops.read (file, &fill_length, 8) != 8)
@@ -194,13 +273,23 @@ csl_cmd_fill (const grub_file_t file,
 			", fill length 0x%" PRIxGRUB_UINT64_T
 			", pattern 0x%" PRIxGRUB_UINT64_T "\n",
 			cmd_names[CMD_FILL], address, fill_length, pattern);
-	err = grub_relocator_alloc_chunk_addr (relocator, &ch,
-			(grub_addr_t) address, (grub_size_t) fill_length);
+
+#ifndef GRUB_MACHINE_EFI
+	const bool pae_required = address + fill_length > GRUB_ULONG_MAX;
+	if (pae_required)
+	{
+		memset_pae (address, (int) pattern & 0xff, fill_length);
+		return GRUB_ERR_NONE;
+	}
+#endif
+
+	grub_addr_t target = 0;
+	err = csl_get_tgt_addr_chunk (address, &target, &ch, fill_length);
 	if (err != GRUB_ERR_NONE)
 		return err;
 
-	grub_memset (get_virtual_current_address (ch), (int) pattern & 0xff,
-			(grub_size_t) fill_length);
+	grub_memset ((void *) target, (int) pattern & 0xff,
+				 (grub_size_t) fill_length);
 	return GRUB_ERR_NONE;
 }
 
@@ -326,15 +415,6 @@ csl_dispatch (const grub_file_t file,
 
 	grub_dprintf ("csl", "Dispatching cmd %u, data length 0x%"
 			PRIxGRUB_UINT64_T "\n", cmd, length);
-
-	/*
-	 * csl_fs_ops.read can only read grub_ssize_t bytes,
-	 * be conservative and assume the whole data is read via
-	 * grub_file_read.
-	 */
-	if ((grub_ssize_t) length < 0)
-		return grub_error (GRUB_ERR_OUT_OF_RANGE,
-				"data length out of range - 0x%" PRIxGRUB_UINT64_T, length);
 
 	switch (cmd)
 	{
