@@ -270,7 +270,7 @@ load_next_block (const grub_uint32_t offset)
 
 /*
  * Read a header field of given length. Closes fd and returns 0 if an error
- * occurrs, 1 otherwise.
+ * occurs, 1 otherwise.
  */
 static unsigned
 read_field (void *field,
