@@ -375,7 +375,7 @@ _free_ret:
 	pd->addr_lo = orig_addr_lo;
 	pd->addr_hi = orig_addr_hi;
 	grub_printf ("%s: before unload\n", __func__);
-	//grub_relocator_unload (relocator);
+	grub_relocator_unload (relocator);
 	grub_printf ("%s: relocator NULL\n", __func__);
 	relocator = NULL;
 

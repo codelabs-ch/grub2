@@ -278,10 +278,12 @@ check_leftover (struct grub_relocator_fw_leftover *lo)
 static void
 free_subchunk (const struct grub_relocator_subchunk *subchu)
 {
+  grub_printf("%s: subchu->type %u\n", __func__, subchu->type);
   switch (subchu->type)
     {
     case CHUNK_TYPE_REGION_START:
       {
+	grub_printf("%s: CHUNK_TYPE_REGION_START\n", __func__);
 	grub_mm_region_t r1, r2, *rp;
 	grub_mm_header_t h;
 	grub_size_t pre_size;
@@ -290,11 +292,15 @@ free_subchunk (const struct grub_relocator_subchunk *subchu)
 					  + (grub_vtop (subchu->reg)
 					     - subchu->start) + subchu->size,
 					  GRUB_MM_ALIGN);
+	grub_printf("%s: before rp loop\n", __func__);
 	for (rp = &grub_mm_base; *rp && *rp != r2; rp = &((*rp)->next));
+	grub_printf("%s: after rp loop\n", __func__);
 	pre_size = subchu->pre_size;
+	grub_printf("%s: pre_size %x\n", __func__, pre_size);
 
 	if (*rp)
 	  {
+	    grub_printf("%s: if (*rp) true\n", __func__);
 	    grub_mm_header_t h2, *hp;
 	    r1->first = r2->first;
 	    r1->next = r2->next;
@@ -305,10 +311,12 @@ free_subchunk (const struct grub_relocator_subchunk *subchu)
 	    h->next = r2->first;
 	    h->magic = GRUB_MM_FREE_MAGIC;
 	    h->size = (r2 - r1 - 1);
+		grub_printf("%s: before hp loop\n", __func__);
 	    for (hp = &r2->first, h2 = *hp; h2->next != r2->first;
 		 hp = &(h2->next), h2 = *hp)
 	      if (h2 == (grub_mm_header_t) (r2 + 1))
 		break;
+		grub_printf("%s: after hp loop\n", __func__);
 	    if (h2 == (grub_mm_header_t) (r2 + 1))
 	      {
 		h->size = h2->size + (h2 - h);
@@ -316,8 +324,10 @@ free_subchunk (const struct grub_relocator_subchunk *subchu)
 		*hp = h;
 		if (hp == &r2->first)
 		  {
+		    grub_printf("%s: before h2 loop\n", __func__);
 		    for (h2 = r2->first; h2->next != r2->first; h2 = h2->next);
 		    h2->next = h;
+		    grub_printf("%s: after h2 loop\n", __func__);
 		  }
 	      }
 	    else
@@ -327,14 +337,17 @@ free_subchunk (const struct grub_relocator_subchunk *subchu)
 	  }
 	else
 	  {
+	    grub_printf("%s: if (*rp) false\n", __func__);
 	    r1->pre_size = pre_size;
 	    r1->size = (r2 - r1) * sizeof (*r2);
 	    /* Find where to insert this region.
 	       Put a smaller one before bigger ones,
 	       to prevent fragmentation.  */
+	    grub_printf("%s: before rp(2) loop\n", __func__);
 	    for (rp = &grub_mm_base; *rp; rp = &((*rp)->next))
 	      if ((*rp)->size > r1->size)
 		break;
+	    grub_printf("%s: after rp(2) loop\n", __func__);
 	    r1->next = *rp;
 	    *rp = r1->next;
 	    h = (grub_mm_header_t) (r1 + 1);
@@ -343,17 +356,21 @@ free_subchunk (const struct grub_relocator_subchunk *subchu)
 	    h->magic = GRUB_MM_FREE_MAGIC;
 	    h->size = (r2 - r1 - 1);
 	  }
+	grub_printf("%s: before r2(2) loop\n", __func__);
 	for (r2 = grub_mm_base; r2; r2 = r2->next)
 	  if ((grub_addr_t) r2 + r2->size == (grub_addr_t) r1)
 	    break;
+	grub_printf("%s: after r2(2) loop\n", __func__);
 	if (r2)
 	  {
 	    grub_mm_header_t hl2, hl, g;
 	    g = (grub_mm_header_t) ((grub_addr_t) r2 + r2->size);
 	    g->size = (grub_mm_header_t) r1 - g;
 	    r2->size += r1->size;
+	    grub_printf("%s: before hl loops\n", __func__);
 	    for (hl = r2->first; hl->next != r2->first; hl = hl->next);
 	    for (hl2 = r1->first; hl2->next != r1->first; hl2 = hl2->next);
+	    grub_printf("%s: after hl loops\n", __func__);
 	    hl2->next = r2->first;
 	    r2->first = r1->first;
 	    hl->next = r2->first;
@@ -1507,15 +1524,21 @@ void
 grub_relocator_unload (struct grub_relocator *rel)
 {
   struct grub_relocator_chunk *chunk, *next;
-  if (!rel)
+  if (!rel) {
+	grub_printf("%s: !rel\n", __func__);
     return;
+  }
   for (chunk = rel->chunks; chunk; chunk = next)
     {
       unsigned i;
+	  grub_printf("%s: in chunks loop, subchunks: %u\n", __func__, chunk->nsubchunks);
       for (i = 0; i < chunk->nsubchunks; i++)
 	free_subchunk (&chunk->subchunks[i]);
+	  grub_printf("%s: before unmap memory\n", __func__);
       grub_unmap_memory (chunk->srcv, chunk->size);
+	  grub_printf("%s: after unmap memory\n", __func__);
       next = chunk->next;
+	  grub_printf("%s: before grub_free\n", __func__);
       grub_free (chunk->subchunks);
       grub_free (chunk);
     }
