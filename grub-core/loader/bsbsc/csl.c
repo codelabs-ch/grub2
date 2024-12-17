@@ -211,6 +211,7 @@ csl_cmd_write (const grub_file_t file,
 			return grub_error (GRUB_ERR_FILE_READ_ERROR,
 					"%s - unable to read 0x%" PRIxGRUB_SIZE " content bytes",
 					cmd_names[CMD_WRITE], content_len);
+		grub_printf ("%s: returning GRUB_ERR_NONE\n", __func__);
 		return GRUB_ERR_NONE;
 	}
 

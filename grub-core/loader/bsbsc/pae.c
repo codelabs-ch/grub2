@@ -358,6 +358,7 @@ read_pae (grub_file_t file, grub_uint64_t dest, grub_uint64_t length,
 		grub_memcpy ((void *)(vmem_addr + offset), tmp_buf, len);
 		paging_disable_pae ();
 		/* VGA-logging works again */
+		grub_printf ("%s: Done\n", __func__);
 
 		dest += s2MiB;
 		length -= len;
@@ -367,12 +368,17 @@ read_pae (grub_file_t file, grub_uint64_t dest, grub_uint64_t length,
 _free_ret:
 	grub_free (tmp_buf);
 	tmp_buf = NULL;
+	grub_printf ("%s: buffer freed\n", __func__);
 
 	paging_disable_pae ();
+	grub_printf ("%s: paging_disable_pae called\n", __func__);
 	pd->addr_lo = orig_addr_lo;
 	pd->addr_hi = orig_addr_hi;
-	grub_relocator_unload (relocator);
+	grub_printf ("%s: before unload\n", __func__);
+	//grub_relocator_unload (relocator);
+	grub_printf ("%s: relocator NULL\n", __func__);
 	relocator = NULL;
 
+	grub_printf ("%s: returning %d\n", __func__, ret);
 	return ret;
 }
