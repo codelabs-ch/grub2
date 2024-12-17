@@ -59,8 +59,9 @@ struct pg_table {
 static struct pg_table pgtbl;
 static unsigned int pgtbl_initialized = 0;
 
-/* Relocator for 2 MiB window allocation */
-static struct grub_relocator *relocator = NULL;
+/* Relocator chunk for 2 MiB window */
+static grub_relocator_chunk_t chunk;
+static bool chunk_allocated = false;
 
 static inline CRx_TYPE read_cr0 (void) __attribute__((always_inline));
 static inline CRx_TYPE read_cr4 (void) __attribute__((always_inline));
@@ -188,30 +189,38 @@ static void identity_paging_init (void)
  * Use relocator to allocate a 2 MiB chunk for PAE window.
  *
  * Required to avoid overlap with regions allocated by GRUB, and to fulfill the
- * 2 MiB alignment constraint.
+ * 2 MiB alignment constraint. Returns error if the chunk could not be
+ * allocated.
+ *
+ * Note: The 2 MiB chunk is not freed explicitly, because grub_relocator_unload
+ *       is just too problematic. If you wonder why, just look at the
+ *       free_subchunk() code.
  */
-static grub_err_t
-get_vmem (grub_relocator_chunk_t *ch)
+static grub_err_t get_vmem (void)
 {
 	grub_err_t err;
+	struct grub_relocator *rel;
 
-	if (!relocator)
+	if (chunk_allocated)
 	{
-		relocator = grub_relocator_new ();
-		if (!relocator)
-		{
-			grub_fatal ("%s: Unable to create relocator\n", __func__);
-			return grub_errno;
-		}
+		return GRUB_ERR_NONE;
 	}
 
-	err = grub_relocator_alloc_chunk_align_safe (relocator, ch, 0,
+	rel = grub_relocator_new ();
+	if (!rel)
+	{
+		grub_fatal ("%s: Unable to create relocator\n", __func__);
+		return grub_errno;
+	}
+
+	err = grub_relocator_alloc_chunk_align_safe (rel, &chunk, 0,
 												 UP_TO_TOP32 (s2MiB),
 												 s2MiB, s2MiB,
 												 GRUB_RELOCATOR_PREFERENCE_NONE, 1);
 	if (err)
 		return err;
 
+	chunk_allocated = true;
 	return GRUB_ERR_NONE;
 }
 
@@ -230,15 +239,14 @@ static void map_page (struct pde *const pd, grub_uint64_t phys)
 
 void memset_pae (grub_uint64_t dest, unsigned char pat, grub_uint64_t length)
 {
-	static grub_relocator_chunk_t ch;
 	grub_ssize_t offset;
 
-	if (get_vmem (&ch))
+	if (get_vmem ())
 	{
 	    grub_fatal ("%s: Unable to allocate 2 MiB chunk for PAE window", __func__);
 	    return;
 	}
-	const uintptr_t vmem_addr = (uintptr_t)get_virtual_current_address (ch);
+	const uintptr_t vmem_addr = (uintptr_t)get_virtual_current_address (chunk);
 
 	if (!pgtbl_initialized)
 	{
@@ -277,15 +285,12 @@ void memset_pae (grub_uint64_t dest, unsigned char pat, grub_uint64_t length)
 
 	pd->addr_lo = orig_addr_lo;
 	pd->addr_hi = orig_addr_hi;
-	grub_relocator_unload (relocator);
-	relocator = NULL;
 }
 
 grub_int64_t
 read_pae (grub_file_t file, grub_uint64_t dest, grub_uint64_t length,
 		grub_ssize_t (*read_func)(grub_file_t file, void *buf, grub_size_t len))
 {
-	grub_relocator_chunk_t ch;
 	grub_int64_t ret = length;
 	grub_ssize_t offset;
 	char *tmp_buf = NULL;
@@ -293,12 +298,12 @@ read_pae (grub_file_t file, grub_uint64_t dest, grub_uint64_t length,
 	if (read_func == NULL)
 		return -1;
 
-	if (get_vmem (&ch))
+	if (get_vmem ())
 	{
 	    grub_fatal ("%s: Unable to allocate 2 MiB chunk for PAE window", __func__);
 	    return -1;
 	}
-	const uintptr_t vmem_addr = (uintptr_t)get_virtual_current_address (ch);
+	const uintptr_t vmem_addr = (uintptr_t)get_virtual_current_address (chunk);
 
 	if (!pgtbl_initialized)
 	{
@@ -371,8 +376,6 @@ _free_ret:
 	paging_disable_pae ();
 	pd->addr_lo = orig_addr_lo;
 	pd->addr_hi = orig_addr_hi;
-	grub_relocator_unload (relocator);
-	relocator = NULL;
 
 	return ret;
 }
