@@ -225,7 +225,7 @@ hash_valid (const grub_uint8_t * const h)
 {
 	unsigned res;
 
-	hasher->init (hash_ctx);
+	hasher->init (hash_ctx, 0);
 	hasher->write (hash_ctx, state.next_hash, SHA512_HASHSUM_LEN);
 	hasher->write (hash_ctx, state.data, bdl ());
 	hasher->final (hash_ctx);
@@ -544,7 +544,7 @@ GRUB_MOD_INIT(sbs)
 		grub_memset (&pseudo_file, 0, sizeof (pseudo_file));
 
 		/* not a pubkey, skip.  */
-		if (mod_header->type != OBJ_TYPE_PUBKEY)
+		if (mod_header->type != OBJ_TYPE_GPG_PUBKEY)
 			continue;
 
 		pseudo_file.fs = &pseudo_fs;
